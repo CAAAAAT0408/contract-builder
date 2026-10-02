@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공급계약서 자동작성</title>
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#fff; --ink:#1d2433; --muted:#667085; --line:#e3e6eb; --soft:#f8f9fb;
+  --accent:#1f4e79; --accent-ink:#fff; --accent-soft:#e8eff7;
+  --upd:#2563eb; --upd-soft:#e7efff; --add:#15803d; --add-soft:#e3f5e9; --chk:#b45309; --chk-soft:#fdf1e1;
+  --dong:#7c3aed; --dong-soft:#f0e9fe; --info:#667085; --info-soft:#eef0f3;
+  --mark:#fff176; --del:#c0392b; --warn-bg:#fff7e6; --warn-line:#f3d19c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 "Malgun Gothic","맑은 고딕","Apple SD Gothic Neo",system-ui,sans-serif}
+header{background:var(--accent);color:#fff}
+header .in{max-width:1180px;margin:0 auto;padding:18px 20px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+header h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.3px}
+header p{margin:0;opacity:.85;font-size:13px}
+main{max-width:1180px;margin:0 auto;padding:20px 16px 80px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:16px}
+.card > h2{margin:0;padding:14px 18px;font-size:15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.card > h2 .no{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px}
+.card > h2 .sub{font-weight:400;color:var(--muted);font-size:12.5px}
+.body{padding:16px 18px}
+.drops{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:720px){.drops{grid-template-columns:1fr}}
+.drop{border:2px dashed #c9cfd8;border-radius:10px;padding:18px;text-align:center;cursor:pointer;background:var(--soft);transition:.15s}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop.ok{border-style:solid;border-color:#9cc3a7;background:#f1faf3}
+.drop b{display:block;font-size:14.5px;margin-bottom:4px}
+.drop .hint{color:var(--muted);font-size:12.5px}
+.drop .file{margin-top:8px;font-weight:600;color:var(--add);word-break:break-all}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:8px;padding:9px 18px;font:inherit;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.ghost{background:#fff;color:var(--accent)}
+.btn.sm{padding:4px 10px;font-weight:500;font-size:12.5px}
+label.chk{display:inline-flex;gap:6px;align-items:center;cursor:pointer;user-select:none}
+.muted{color:var(--muted)}
+.err{background:#fdecea;border:1px solid #f5c2bd;color:#8a1c12;border-radius:8px;padding:10px 14px;margin-top:12px;display:none}
+.spin{display:none;align-items:center;gap:8px;color:var(--muted)}
+.spin i{width:16px;height:16px;border:2px solid #c9cfd8;border-top-color:var(--accent);border-radius:50%;animation:r .8s linear infinite}
+@keyframes r{to{transform:rotate(360deg)}}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border-radius:999px;padding:3px 11px;font-size:12.5px;font-weight:600}
+.k-update{background:var(--upd-soft);color:var(--upd)} .k-add{background:var(--add-soft);color:var(--add)}
+.k-check{background:var(--chk-soft);color:var(--chk)} .k-dong{background:var(--dong-soft);color:var(--dong)}
+.k-info{background:var(--info-soft);color:var(--info)}
+table.f{width:100%;border-collapse:collapse}
+table.f th,table.f td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:middle}
+table.f th{font-size:12.5px;color:var(--muted);font-weight:600;background:var(--soft)}
+table.f td.old{color:var(--muted);font-size:13px}
+table.f input[type=text]{width:100%;padding:6px 8px;border:1px solid #cfd5dd;border-radius:6px;font:inherit}
+table.f input[type=text]:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+.warns{background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:8px;padding:10px 14px 10px 32px;margin:0}
+.warns li{margin:3px 0}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.tab{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 13px;cursor:pointer;font:inherit;font-size:13px}
+.tab.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.group{margin:18px 0 6px;font-weight:700;font-size:13.5px;color:var(--accent);display:flex;align-items:center;gap:8px}
+.group:first-child{margin-top:4px}
+.ch{display:grid;grid-template-columns:96px 1fr;gap:10px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:6px 0;background:#fff}
+.ch.off{background:var(--soft)}
+.ch .side{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.ch .title{font-size:12.5px;color:var(--muted);margin-bottom:4px}
+.ch .note{font-size:12px;color:var(--chk);margin-top:4px}
+.txt{white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere}
+.txt.before{color:#475467}
+.txt.after{margin-top:4px}
+.lbl{font-size:11px;color:var(--muted);font-weight:600;margin-right:4px}
+mark{background:var(--mark);padding:0 1px;border-radius:2px}
+del{color:var(--del);text-decoration:line-through;background:#fdecea}
+.ch.del-on .txt.before{text-decoration:line-through;color:#98a2b3}
+details.dong summary{cursor:pointer;color:var(--dong);font-weight:600}
+details.dong .blk{margin:8px 0 0;padding-left:8px;border-left:3px solid var(--dong-soft)}
+.foot{position:sticky;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:12px 18px;border-radius:0 0 10px 10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.foot input{flex:1;min-width:260px;padding:8px 10px;border:1px solid #cfd5dd;border-radius:6px;font:inherit}
+.done{display:none;gap:10px;flex-wrap:wrap;align-items:center;padding:12px 18px;border-top:1px solid var(--line);background:#f1faf3}
+.done a{color:var(--add);font-weight:700}
+.share{font-size:12.5px;color:var(--muted);margin-top:24px;text-align:center}
+.share code{background:#fff;border:1px solid var(--line);padding:2px 6px;border-radius:4px}
+.hidden{display:none !important}
+.help{font-size:12.5px;color:var(--muted);margin:0 0 10px}
+</style>
+</head>
+<body>
+<header><div class="in">
+  <h1>공급계약서 자동작성</h1>
+  <p>샘플 계약서와 새 현장 입주자모집공고를 넣으면, 공고에서 바뀐 내용을 계약서에 반영해 드립니다.</p>
+</div></header>
+<main>
+
+<section class="card">
+  <h2><span class="no">1</span>파일 넣기</h2>
+  <div class="body">
+    <div class="drops">
+      <div class="drop" id="dropC" data-kind="contract">
+        <b>샘플 계약서 (.docx)</b>
+        <div class="hint">이전 현장의 공급계약서를 끌어다 놓거나 눌러서 고르세요</div>
+        <div class="file" id="fileC"></div>
+        <input type="file" accept=".docx" class="hidden">
+      </div>
+      <div class="drop" id="dropN" data-kind="notice">
+        <b>새 현장 입주자모집공고 (.hwp)</b>
+        <div class="hint">반영할 현장의 모집공고 한글 파일</div>
+        <div class="file" id="fileN"></div>
+        <input type="file" accept=".hwp,.hwpx" class="hidden">
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn" id="btnAnalyze" disabled>분석하기</button>
+      <label class="chk"><input type="checkbox" id="optStrike" checked> 샘플 계약서의 취소선(삭제 표시) 글자도 반영</label>
+      <span class="spin" id="spinA"><i></i>분석 중… (10초 안팎)</span>
+    </div>
+    <div class="err" id="errA"></div>
+  </div>
+</section>
+
+<div id="result" class="hidden">
+  <section class="card">
+    <h2><span class="no">2</span>1페이지 · 현장 정보 <span class="sub">공고에서 찾은 값입니다. 틀리면 고치고, 바꾸지 않을 항목은 체크를 끄세요.</span></h2>
+    <div class="body">
+      <div class="chips" id="chips" style="margin-bottom:14px"></div>
+      <table class="f" id="tblFields">
+        <thead><tr><th style="width:26%">항목</th><th style="width:26%">샘플 계약서</th><th>새 값</th><th style="width:60px">적용</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <h3 style="font-size:13.5px;margin:20px 0 6px">이전 현장 이름 바꾸기 <span class="muted" style="font-weight:400">— 계약서 전체(1페이지 재산의 표시, 조항 본문 포함)에서 글자를 찾아 바꿉니다</span></h3>
+      <table class="f" id="tblRules">
+        <thead><tr><th style="width:36%">바꿀 글자 (샘플 계약서)</th><th>새 글자</th><th style="width:70px">찾은 곳</th><th style="width:60px">적용</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="row" style="margin-top:8px"><button class="btn ghost sm" id="btnAddRule">+ 바꿀 글자 추가</button></div>
+      <div id="warnBox" class="hidden" style="margin-top:18px">
+        <h3 style="font-size:13.5px;margin:0 0 6px">확인할 점</h3>
+        <ul class="warns" id="warns"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="no">3</span>유의사항(기타사항 조항) 변경 검토 <span class="sub">체크된 것만 계약서에 반영됩니다. 바뀐 글자는 계약서에 노란 형광펜으로 표시됩니다.</span></h2>
+    <div class="body">
+      <p class="help"><span class="chip k-update">변경</span> 공고 내용이 달라진 문구 · <span class="chip k-add">추가</span> 공고에만 있는 새 항목 ·
+        <span class="chip k-check">확인 필요</span> 공고에 없는 계약서 문구 (계약서 전용 문구면 그대로, 공고에서 빠진 항목이면 체크해서 삭제) ·
+        <span class="chip k-dong">동별 교체</span> 동 번호가 달라 통째로 교체</p>
+      <div class="tabs" id="tabs"></div>
+      <div class="row" style="margin:0 0 6px"><button class="btn ghost sm" id="btnAllOn">보이는 항목 모두 체크</button><button class="btn ghost sm" id="btnAllOff">모두 해제</button></div>
+      <div id="changes"></div>
+    </div>
+    <div class="foot">
+      <span class="no" style="display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px">4</span>
+      <input type="text" id="outName" placeholder="저장할 파일 이름">
+      <button class="btn" id="btnBuild">계약서 만들기</button>
+      <span class="spin" id="spinB"><i></i>만드는 중…</span>
+    </div>
+    <div class="done" id="done">
+      ✔ 만들었습니다. <a id="dlDocx" href="#">계약서 내려받기 (.docx)</a> · <a id="dlXlsx" href="#">변경내역 (.xlsx)</a>
+      <span class="muted">형광펜은 검토가 끝나면 Word에서 Ctrl+A → 텍스트 강조 색 → 색 없음으로 지우세요.</span>
+    </div>
+    <div class="err" id="errB" style="margin:0 18px 14px"></div>
+  </section>
+</div>
+
+<div class="share hidden" id="share">팀원 접속 주소: <code id="shareUrl"></code> <button class="btn ghost sm" id="btnCopy">복사</button></div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const files = {contract:null, notice:null};
+let plan = null, decisions = {}, filter = 'all';
+
+const KIND = {
+  update:{label:'변경', cls:'k-update', act:'적용'},
+  add:{label:'추가', cls:'k-add', act:'넣기'},
+  contract_only:{label:'확인 필요', cls:'k-check', act:'삭제'},
+  extra:{label:'괄호 문구', cls:'k-check', act:'삭제'},
+  dong_replace:{label:'동별 교체', cls:'k-dong', act:'적용'},
+  info:{label:'참고', cls:'k-info', act:''},
+};
+const TABS = [
+  ['all','전체', c => true],
+  ['update','변경', c => c.kind==='update'],
+  ['add','추가', c => c.kind==='add'],
+  ['check','확인 필요', c => c.kind==='contract_only' || c.kind==='extra'],
+  ['dong','동별', c => c.kind==='dong_replace'],
+  ['info','참고', c => c.kind==='info'],
+];
+
+// ---------------------------------------------------------------- 파일 고르기
+for (const el of document.querySelectorAll('.drop')) {
+  const kind = el.dataset.kind, input = el.querySelector('input');
+  el.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => input.files[0] && setFile(kind, input.files[0]));
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('over'));
+  el.addEventListener('drop', e => { e.preventDefault(); el.classList.remove('over'); if (e.dataTransfer.files[0]) setFile(kind, e.dataTransfer.files[0]); });
+}
+function setFile(kind, f) {
+  const ok = kind==='contract' ? /\.docx$/i.test(f.name) : /\.hwpx?$/i.test(f.name);
+  if (!ok) { showErr('errA', kind==='contract' ? '샘플 계약서는 .docx 파일이어야 합니다.' : '모집공고는 .hwp 파일이어야 합니다.'); return; }
+  files[kind] = f;
+  const box = kind==='contract' ? $('#dropC') : $('#dropN');
+  box.classList.add('ok');
+  (kind==='contract' ? $('#fileC') : $('#fileN')).textContent = f.name;
+  $('#btnAnalyze').disabled = !(files.contract && files.notice);
+  hideErr('errA');
+}
+function showErr(id, msg){ const e=$('#'+id); e.textContent=msg; e.style.display='block'; }
+function hideErr(id){ $('#'+id).style.display='none'; }
+
+// ---------------------------------------------------------------- 분석
+$('#btnAnalyze').addEventListener('click', async () => {
+  hideErr('errA'); $('#spinA').style.display='inline-flex'; $('#btnAnalyze').disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append('contract', files.contract, files.contract.name);
+    fd.append('notice', files.notice, files.notice.name);
+    fd.append('strike', $('#optStrike').checked ? '1' : '0');
+    const r = await fetch('api/analyze', {method:'POST', body:fd});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error);
+    load(j.plan);
+  } catch (e) { showErr('errA', e.message || String(e)); }
+  finally { $('#spinA').style.display='none'; $('#btnAnalyze').disabled = !(files.contract && files.notice); }
+});
+$('#optStrike').addEventListener('change', async () => {
+  if (!plan) return;
+  $('#spinA').style.display='inline-flex';
+  try {
+    const r = await fetch('api/reanalyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({job:plan.job, strike:$('#optStrike').checked})});
+    const j = await r.json(); if (!j.ok) throw new Error(j.error); load(j.plan);
+  } catch (e) { showErr('errA', e.message); } finally { $('#spinA').style.display='none'; }
+});
+
+function load(p) {
+  plan = p; decisions = {};
+  for (const c of p.changes) decisions[c.id] = c.default;
+  $('#result').classList.remove('hidden');
+  $('#done').style.display = 'none'; hideErr('errB');
+  $('#outName').value = p.default_name || '';
+  renderChips(); renderFields(); renderRules(); renderWarns(); renderTabs(); renderChanges();
+  $('#result').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function renderChips() {
+  const s = plan.summary, n = k => s[k] || 0;
+  const nf = plan.notice || {};
+  $('#chips').innerHTML = [
+    nf.complex_name ? `<span class="chip k-info">${esc(nf.complex_name)}${nf.block ? ' · '+esc(nf.block)+'BL' : ''}</span>` : '',
+    `<span class="chip k-update">변경 ${n('update')}</span>`,
+    `<span class="chip k-add">추가 ${n('add')}</span>`,
+    `<span class="chip k-check">확인 필요 ${n('contract_only') + n('extra')}</span>`,
+    n('dong_replace') ? `<span class="chip k-dong">동별 교체</span>` : '',
+    plan.warnings.length ? `<span class="chip" style="background:var(--warn-bg);color:#8a5a00">확인할 점 ${plan.warnings.length}</span>` : '',
+  ].join('');
+}
+
+function renderFields() {
+  const tb = $('#tblFields tbody');
+  tb.innerHTML = plan.fields.map(f => `<tr data-key="${esc(f.key)}">
+    <td>${esc(f.label)}</td><td class="old">${esc(f.old) || '<span class="muted">(비어 있음)</span>'}</td>
+    <td><input type="text" value="${esc(f.new)}"></td>
+    <td><input type="checkbox" ${f.apply ? 'checked' : ''}></td></tr>`).join('')
+    || '<tr><td colspan="4" class="muted">계약서에서 1페이지 항목을 찾지 못했습니다.</td></tr>';
+}
+function renderRules() {
+  const tb = $('#tblRules tbody');
+  tb.innerHTML = plan.rules.map((r, i) => ruleRow(r)).join('') || '';
+}
+function ruleRow(r) {
+  return `<tr><td><input type="text" class="rold" value="${esc(r.old)}"></td><td><input type="text" class="rnew" value="${esc(r.new)}"></td>
+    <td class="muted">${r.count != null ? r.count+'곳' : '-'}</td><td><input type="checkbox" class="rap" ${r.apply ? 'checked' : ''}></td></tr>`;
+}
+$('#btnAddRule').addEventListener('click', () => $('#tblRules tbody').insertAdjacentHTML('beforeend', ruleRow({old:'', new:'', apply:true, count:null})));
+
+function renderWarns() {
+  $('#warnBox').classList.toggle('hidden', !plan.warnings.length);
+  $('#warns').innerHTML = plan.warnings.map(w => `<li>${esc(w)}</li>`).join('');
+}
+
+function renderTabs() {
+  $('#tabs').innerHTML = TABS.map(([k, label, fn]) => {
+    const n = plan.changes.filter(fn).length;
+    if (k !== 'all' && !n) return '';
+    return `<button class="tab ${filter===k ? 'on' : ''}" data-k="${k}">${label} ${n}</button>`;
+  }).join('');
+  for (const b of document.querySelectorAll('.tab')) b.addEventListener('click', () => { filter = b.dataset.k; renderTabs(); renderChanges(); });
+}
+
+function segs(arr, mode) {
+  return (arr || []).map(([t, h]) => h ? (mode==='before' ? `<del>${esc(t)}</del>` : `<mark>${esc(t)}</mark>`) : esc(t)).join('').replace(/⏎/g, '\n');
+}
+
+function changeHtml(c) {
+  const k = KIND[c.kind] || KIND.info, on = decisions[c.id];
+  let body = '';
+  if (c.kind === 'update' || c.kind === 'extra') {
+    body = `<div class="txt before"><span class="lbl">지금</span>${segs(c.before, 'before')}</div>
+            <div class="txt after"><span class="lbl">바뀐 뒤</span>${segs(c.after, 'after')}</div>`;
+  } else if (c.kind === 'add') {
+    body = `<div class="txt after">${segs(c.after, 'after')}</div>`;
+  } else if (c.kind === 'contract_only') {
+    body = `<div class="txt before">${segs(c.before, '')}</div>`;
+  } else if (c.kind === 'dong_replace') {
+    body = `<div class="txt before">${segs(c.before, '')}</div>
+      <details class="dong"><summary>새 동별 유의사항 보기 (${c.blocks.length}개 동)</summary>
+      ${c.blocks.map(b => `<div class="blk"><b>${esc(b.dong)}</b><div class="txt">${b.items.map(esc).join('\n')}</div></div>`).join('')}</details>`;
+  } else {
+    body = `<div class="txt before">${segs(c.before, 'before')}</div>`;
+  }
+  const cls = ['ch'];
+  if (!on && c.kind !== 'info') cls.push('off');
+  if (on && (c.kind === 'contract_only')) cls.push('del-on');
+  return `<div class="${cls.join(' ')}" data-id="${c.id}">
+    <div class="side"><span class="chip ${k.cls}">${k.label}</span>
+      ${k.act ? `<label class="chk"><input type="checkbox" ${on ? 'checked' : ''}> ${k.act}</label>` : ''}</div>
+    <div><div class="title">${esc(c.title)}</div>${body}${c.note ? `<div class="note">${esc(c.note)}</div>` : ''}</div></div>`;
+}
+
+function visible() { const fn = TABS.find(t => t[0]===filter)[2]; return plan.changes.filter(fn); }
+
+function renderChanges() {
+  const list = visible(), groups = [];
+  for (const c of list) { let g = groups.find(x => x.name === c.group); if (!g) groups.push(g = {name:c.group, items:[]}); g.items.push(c); }
+  $('#changes').innerHTML = groups.map(g => `<div class="group">${esc(g.name || '(구분 없음)')} <span class="muted" style="font-weight:400">${g.items.length}</span></div>${g.items.map(changeHtml).join('')}`).join('')
+    || '<p class="muted">해당하는 항목이 없습니다.</p>';
+  for (const el of document.querySelectorAll('.ch input[type=checkbox]')) {
+    el.addEventListener('change', () => { decisions[el.closest('.ch').dataset.id] = el.checked; refreshRow(el.closest('.ch')); });
+  }
+}
+function refreshRow(row) {
+  const c = plan.changes.find(x => x.id === row.dataset.id);
+  row.outerHTML = changeHtml(c);
+  const nr = document.querySelector(`.ch[data-id="${c.id}"] input[type=checkbox]`);
+  if (nr) nr.addEventListener('change', () => { decisions[c.id] = nr.checked; refreshRow(nr.closest('.ch')); });
+}
+$('#btnAllOn').addEventListener('click', () => { for (const c of visible()) if (c.kind !== 'info') decisions[c.id] = true; renderChanges(); });
+$('#btnAllOff').addEventListener('click', () => { for (const c of visible()) if (c.kind !== 'info') decisions[c.id] = false; renderChanges(); });
+
+// ---------------------------------------------------------------- 만들기
+$('#btnBuild').addEventListener('click', async () => {
+  hideErr('errB'); $('#done').style.display='none'; $('#spinB').style.display='inline-flex'; $('#btnBuild').disabled = true;
+  try {
+    const fields = {};
+    for (const tr of document.querySelectorAll('#tblFields tbody tr[data-key]')) {
+      fields[tr.dataset.key] = {value: tr.querySelector('input[type=text]').value, apply: tr.querySelector('input[type=checkbox]').checked};
+    }
+    const rules = [...document.querySelectorAll('#tblRules tbody tr')].map(tr => ({
+      old: tr.querySelector('.rold').value, new: tr.querySelector('.rnew').value, apply: tr.querySelector('.rap').checked}))
+      .filter(r => r.old.trim());
+    const r = await fetch('api/build', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({job:plan.job, decisions, fields, rules, filename:$('#outName').value})});
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error);
+    const q = `job=${plan.job}&t=${Date.now()}`;
+    $('#dlDocx').href = `api/download?${q}&f=docx`; $('#dlDocx').textContent = `${j.name} 내려받기`;
+    $('#dlXlsx').href = `api/download?${q}&f=xlsx`; $('#dlXlsx').textContent = `변경내역 (${j.report_name})`;
+    $('#done').style.display = 'flex';
+    location.href = $('#dlDocx').href;
+  } catch (e) { showErr('errB', e.message || String(e)); }
+  finally { $('#spinB').style.display='none'; $('#btnBuild').disabled = false; }
+});
+
+// ---------------------------------------------------------------- 팀원 주소 (이 PC 에서 열었을 때만)
+fetch('api/info').then(r => r.json()).then(j => {
+  if (j.share_url) { $('#shareUrl').textContent = j.share_url; $('#share').classList.remove('hidden'); }
+}).catch(() => {});
+$('#btnCopy').addEventListener('click', () => navigator.clipboard?.writeText($('#shareUrl').textContent));
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# 사내 서버판 실행 중 생기는 파일 (접속키, 올린 파일, 로그)
+app/_key.txt
+app/_url.txt
+app/_server.log
+app/_jobs/
+__pycache__/
+*.pyc
+
+# 계약서·공고 원본은 저장소에 넣지 않는다
+*.hwp
+*.hwpx
+*.docx
+*.xlsx
+*.pdf
+~$*
