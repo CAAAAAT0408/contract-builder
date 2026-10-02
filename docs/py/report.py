@@ -75,3 +75,38 @@ def make_report(plan, decisions, fields, rules, log, names):
     out = io.BytesIO()
     wb.save(out)
     return out.getvalue()
+
+
+def make_option_report(plan, decisions, log, names):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '변경내역'
+    ws.append(['구분', '시트', '변경 전 / 항목', '변경 후'])
+    for kind, sheet, old, new in log:
+        ws.append([kind, sheet, old, new])
+    fill = PatternFill('solid', fgColor='1F4E79')
+    for c in ws[1]:
+        c.font = Font(bold=True, color='FFFFFF')
+        c.fill = fill
+    for col, wd in zip('ABCD', (14, 10, 60, 50)):
+        ws.column_dimensions[col].width = wd
+    for row in ws.iter_rows(min_row=2):
+        for c in row:
+            c.alignment = Alignment(wrap_text=True, vertical='top')
+    off = [ch for ch in plan['changes'] if not decisions.get(ch['id'], ch['default'])]
+    if off:
+        ws2 = wb.create_sheet('제외한 변경')
+        ws2.append(['시트', '칸', '항목', '지금', '공고'])
+        for ch in off:
+            ws2.append([ch['sheet'], ch['cell'], ch['label'], str(ch['old']), str(ch['new'])])
+    if plan.get('warnings'):
+        ws3 = wb.create_sheet('확인할 점')
+        for w in plan['warnings']:
+            ws3.append([w])
+        ws3.column_dimensions['A'].width = 140
+    ws4 = wb.create_sheet('입력 파일')
+    ws4.append(['샘플 계약서', names.get('sample', '')])
+    ws4.append(['모집공고', names.get('notice', '')])
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()

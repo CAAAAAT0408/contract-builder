@@ -1,8 +1,8 @@
 // 브라우저 안에서 Python(Pyodide)을 띄워 계약서 엔진을 돌린다.
 // 계약서·공고 파일은 이 브라우저 밖으로 나가지 않는다.
-const VERSION = '2026.10.02';
+const VERSION = '2026.10.02b';
 const PYODIDE = 'https://cdn.jsdelivr.net/pyodide/v0.29.5/full/';
-const PY_FILES = ['hwp_reader.py', 'notice.py', 'contract.py', 'engine.py', 'report.py', 'bridge.py'];
+const PY_FILES = ['hwp_reader.py', 'notice.py', 'contract.py', 'engine.py', 'report.py', 'xlsxio.py', 'options.py', 'bridge.py'];
 const WHEELS = ['olefile-0.47-py2.py3-none-any.whl', 'et_xmlfile-2.0.0-py3-none-any.whl', 'openpyxl-3.1.5-py2.py3-none-any.whl'];
 
 importScripts(PYODIDE + 'pyodide.js');
@@ -65,10 +65,23 @@ onmessage = async (e) => {
           py.destroy();
         }
       }
+    } else if (cmd === 'opt_analyze') {
+      result = JSON.parse(call('opt_analyze', args.x, args.n, args.xname, args.nname));
+    } else if (cmd === 'opt_build') {
+      result = JSON.parse(call('opt_build', JSON.stringify(args)));
+      if (result.ok) {
+        for (const k of ['xlsx', 'report']) {
+          const py = call('opt_result', k);
+          result[k] = py.toJs();
+          py.destroy();
+        }
+      }
     } else {
       throw new Error('알 수 없는 명령: ' + cmd);
     }
-    postMessage({id, result}, result && result.docx ? [result.docx.buffer, result.xlsx.buffer] : []);
+    const transfer = [];
+    for (const k of ['docx', 'xlsx', 'report']) if (result && result[k] && result[k].buffer) transfer.push(result[k].buffer);
+    postMessage({id, result}, transfer);
   } catch (err) {
     postMessage({id, result: {ok: false, error: '처리 중 오류가 났습니다: ' + String(err && err.message || err).split('\n').slice(-3).join(' ')}});
   }

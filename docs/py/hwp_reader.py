@@ -97,3 +97,58 @@ def read_hwp(data):
             if k in p['text']:
                 p['text'] = p['text'].replace(k, v)
     return paras
+
+
+def read_hwp_tables(data):
+    """공고 안의 표를 칸 좌표까지 읽는다.
+    [{'before': 표 바로 앞 문단, 'rows': n, 'cols': m,
+      'cells': [{'r','c','rs','cs','t'}]}]   (t: 칸 글자, 줄바꿈은 '⏎')"""
+    try:
+        ole = olefile.OleFileIO(io.BytesIO(data))
+    except Exception:
+        raise HwpError('한글(.hwp) 파일이 아니거나 손상된 파일입니다.')
+    flags = struct.unpack_from('<I', ole.openstream('FileHeader').read(), 36)[0]
+    if flags & 0x6:
+        raise HwpError('암호가 걸렸거나 배포용(보호) 한글 문서라 읽을 수 없습니다.')
+    compressed = bool(flags & 0x1)
+    sections = sorted((e for e in ole.listdir() if e[0] == 'BodyText' and e[1].startswith('Section')),
+                      key=lambda e: int(e[1][7:]))
+    tables, stack, last = [], [], ''
+    for sec in sections:
+        raw = ole.openstream('/'.join(sec)).read()
+        body = zlib.decompress(raw, -15) if compressed else raw
+        for tag, lvl, rec in _records(body):
+            while stack and lvl <= stack[-1]['_lvl']:
+                stack.pop()
+            if tag == 71 and rec[:4] == b' lbt':            # 표 컨트롤
+                t = {'_lvl': lvl, 'cells': [], 'before': last, 'rows': 0, 'cols': 0}
+                tables.append(t)
+                stack.append(t)
+            elif tag == 77 and stack and len(rec) >= 8:      # TABLE: 행·열 수
+                stack[-1]['rows'], stack[-1]['cols'] = struct.unpack_from('<HH', rec, 4)
+            elif tag == 72 and stack and lvl == stack[-1]['_lvl'] + 1 and len(rec) >= 16:   # 셀
+                col, row, cs, rs = struct.unpack_from('<HHHH', rec, 8)
+                stack[-1]['cells'].append({'r': row, 'c': col, 'rs': rs, 'cs': cs, 't': []})
+            elif tag == 67:
+                txt = _para_text(rec).replace('\r', '')
+                for k, v in BULLET_MAP.items():
+                    txt = txt.replace(k, v)
+                if stack and stack[-1]['cells']:
+                    stack[-1]['cells'][-1]['t'].append(txt)
+                if txt.strip():
+                    last = txt.strip()
+    for t in tables:
+        t.pop('_lvl', None)
+        for c in t['cells']:
+            c['t'] = '⏎'.join(x for x in c['t'] if x.strip())
+    return tables
+
+
+def table_grid(t):
+    """병합을 풀어 [행][열] = (글자, 원래칸번호) 격자로 만든다."""
+    g = [[('', -1)] * t['cols'] for _ in range(t['rows'])]
+    for k, c in enumerate(t['cells']):
+        for r in range(c['r'], min(c['r'] + max(c['rs'], 1), t['rows'])):
+            for cc in range(c['c'], min(c['c'] + max(c['cs'], 1), t['cols'])):
+                g[r][cc] = (c['t'], k)
+    return g

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>공급계약서 자동작성</title>
+<title>계약서 자동작성</title>
 <style>
 :root{
   --bg:#f4f5f7; --panel:#fff; --ink:#1d2433; --muted:#667085; --line:#e3e6eb; --soft:#f8f9fb;
@@ -79,22 +79,34 @@ del{color:var(--del);text-decoration:line-through;background:#fdecea}
 details.dong summary{cursor:pointer;color:var(--dong);font-weight:600}
 details.dong .blk{margin:8px 0 0;padding-left:8px;border-left:3px solid var(--dong-soft)}
 .foot{position:sticky;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:12px 18px;border-radius:0 0 10px 10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.foot input{flex:1;min-width:260px;padding:8px 10px;border:1px solid #cfd5dd;border-radius:6px;font:inherit}
+.foot input[type=text]{flex:1;min-width:260px;padding:8px 10px;border:1px solid #cfd5dd;border-radius:6px;font:inherit}
+label.chk{white-space:nowrap}
 .done{display:none;gap:10px;flex-wrap:wrap;align-items:center;padding:12px 18px;border-top:1px solid var(--line);background:#f1faf3}
 .done a{color:var(--add);font-weight:700}
 .share{font-size:12.5px;color:var(--muted);margin-top:24px;text-align:center}
 .share code{background:#fff;border:1px solid var(--line);padding:2px 6px;border-radius:4px}
 .hidden{display:none !important}
+nav.top{background:#173d60}
+nav.top .in{max-width:1180px;margin:0 auto;padding:0 16px;display:flex;gap:4px}
+.ttab{border:0;background:transparent;color:#c9d6e4;font:inherit;font-weight:600;padding:11px 16px;cursor:pointer;border-bottom:3px solid transparent}
+.ttab.on{color:#fff;border-bottom-color:#fff}
+.ttab:hover{color:#fff}
+table.optc td{vertical-align:top}
+tr.offrow td{opacity:.45}
+tr.offrow td:first-child{opacity:1}
+table.f select{padding:4px 6px;border:1px solid #cfd5dd;border-radius:6px;font:inherit}
 .help{font-size:12.5px;color:var(--muted);margin:0 0 10px}
 </style>
 </head>
 <body>
 <header><div class="in">
-  <h1>공급계약서 자동작성</h1>
-  <p>샘플 계약서와 새 현장 입주자모집공고를 넣으면, 공고에서 바뀐 내용을 계약서에 반영해 드립니다.</p>
+  <h1>계약서 자동작성</h1>
+  <p>이전 현장 계약서와 새 현장 입주자모집공고를 넣으면, 공고에서 바뀐 내용을 반영한 새 계약서를 만들어 드립니다.</p>
   <p class="priv">🔒 파일은 어디로도 전송되지 않고 이 브라우저 안에서만 처리됩니다.</p>
 </div></header>
+<nav class="top"><div class="in"><button class="ttab on" data-pane="paneContract">공급계약서 (.docx)</button><button class="ttab" data-pane="paneOption">추가선택품목 계약서 (.xlsx)</button></div></nav>
 <main>
+<div id="paneContract">
 
 <section class="card">
   <h2><span class="no">1</span>파일 넣기</h2>
@@ -169,20 +181,102 @@ details.dong .blk{margin:8px 0 0;padding-left:8px;border-left:3px solid var(--do
   </section>
 </div>
 
+</div>
+<div id="paneOption" class="hidden">
+<section class="card">
+  <h2><span class="no">1</span>파일 넣기 <span class="sub">타입(주택형)마다 시트가 있는 추가선택품목(발코니 확장·시스템에어컨·유상옵션) 계약서</span></h2>
+  <div class="body">
+    <div class="drops">
+      <div class="drop" id="dropX" data-kind="xsample">
+        <b>샘플 추가선택품목 계약서 (.xlsx)</b>
+        <div class="hint">이전 현장의 추가선택품목 계약서 엑셀을 끌어다 놓거나 눌러서 고르세요</div>
+        <div class="file" id="fileX"></div>
+        <input type="file" accept=".xlsx" class="hidden">
+      </div>
+      <div class="drop" id="dropN2" data-kind="notice">
+        <b>새 현장 입주자모집공고 (.hwp)</b>
+        <div class="hint">공급계약서 탭에서 넣었다면 자동으로 들어옵니다</div>
+        <div class="file" id="fileN2"></div>
+        <input type="file" accept=".hwp,.hwpx" class="hidden">
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn" id="btnOptAnalyze" disabled>분석하기</button>
+      <span class="spin" id="spinO"><i></i>분석 중…</span>
+    </div>
+    <div class="boot boot-mirror"><span class="spin" style="display:inline-flex"><i></i></span><span class="bootMsg">준비 중…</span></div>
+    <div class="err" id="errO"></div>
+  </div>
+</section>
+
+<div id="optResult" class="hidden">
+  <section class="card">
+    <h2><span class="no">2</span>현장 정보 <span class="sub">공고에서 찾은 값입니다. 틀리면 고치고, 바꾸지 않을 항목은 체크를 끄세요.</span></h2>
+    <div class="body">
+      <div class="chips" id="optChips" style="margin-bottom:14px"></div>
+      <table class="f" id="optFields">
+        <thead><tr><th style="width:26%">항목</th><th style="width:26%">샘플 계약서</th><th>새 값</th><th style="width:60px">적용</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <h3 style="font-size:13.5px;margin:20px 0 6px">이전 현장 이름 바꾸기 <span class="muted" style="font-weight:400">— 타입 시트 전체에서 글자를 찾아 바꿉니다 (1행 재산 표시 등)</span></h3>
+      <table class="f" id="optRules">
+        <thead><tr><th style="width:36%">바꿀 글자 (샘플 계약서)</th><th>새 글자</th><th style="width:70px">찾은 칸</th><th style="width:60px">적용</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="row" style="margin-top:8px"><button class="btn ghost sm" id="btnOptAddRule">+ 바꿀 글자 추가</button></div>
+      <div id="optWarnBox" class="hidden" style="margin-top:18px">
+        <h3 style="font-size:13.5px;margin:0 0 6px">확인할 점</h3>
+        <ul class="warns" id="optWarns"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="no">3</span>타입별 발코니 확장 · 새 시트 <span class="sub">공고에 금액이 비어 있으면 직접 넣으세요. 비워 두면 샘플 금액을 그대로 둡니다.</span></h2>
+    <div class="body">
+      <table class="f" id="optBalcony">
+        <thead><tr><th style="width:70px">타입</th><th>시트</th><th style="width:16%">주택형 표기</th><th style="width:13%">샘플 금액</th><th style="width:13%">공고 금액</th><th style="width:17%">넣을 금액 (원)</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="no">4</span>금액 · 문구 변경 <span class="sub">시스템에어컨·유상옵션·패키지에서 공고와 다른 칸입니다. 체크된 것만 반영됩니다.</span></h2>
+    <div class="body">
+      <div class="row" style="margin:0 0 6px"><button class="btn ghost sm" id="btnOptAllOn">모두 체크</button><button class="btn ghost sm" id="btnOptAllOff">모두 해제</button></div>
+      <div id="optChanges"></div>
+    </div>
+    <div class="foot">
+      <span class="no" style="display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px">5</span>
+      <input type="text" id="optName" placeholder="저장할 파일 이름">
+      <label class="chk"><input type="checkbox" id="optHl"> 바뀐 칸 노란색 표시 (검토용)</label>
+      <button class="btn" id="btnOptBuild">계약서 만들기</button>
+      <span class="spin" id="spinOB"><i></i>만드는 중…</span>
+    </div>
+    <div class="done" id="optDone">
+      ✔ 만들었습니다. <a id="dlOptX" href="#">계약서 내려받기 (.xlsx)</a> · <a id="dlOptR" href="#">변경내역 (.xlsx)</a>
+      <span class="muted">서식·인쇄설정은 샘플 그대로이고, 금액 계산 칸은 Excel 에서 열 때 다시 계산됩니다.</span>
+    </div>
+    <div class="err" id="errOB" style="margin:0 18px 14px"></div>
+  </section>
+</div>
+</div>
 </main>
 
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const files = {contract:null, notice:null};
-const worker = new Worker('worker.js?v=2026.10.02');
+const files = {contract:null, notice:null, xsample:null};
+const worker = new Worker('worker.js?v=2026.10.02b');
 let seq = 0, isReady = false;
 const pending = {};
 worker.onmessage = e => {
   const d = e.data;
-  if (d.status !== undefined) { if (d.status) $('#bootMsg').textContent = d.status; return; }
-  if (d.ready) { isReady = true; $('#boot').classList.add('ok'); $('#boot').innerHTML = '✔ 준비됐습니다.'; return; }
-  if (d.fatal) { $('#boot').innerHTML = '⚠ 준비에 실패했습니다: ' + esc(d.fatal) + ' (인터넷 연결을 확인하고 새로고침하세요)'; return; }
+  const boots = document.querySelectorAll('#boot, .boot-mirror');
+  if (d.status !== undefined) { if (d.status) for (const b of boots) { const m = b.querySelector('#bootMsg, .bootMsg'); if (m) m.textContent = d.status; } return; }
+  if (d.ready) { isReady = true; for (const b of boots) { b.classList.add('ok'); b.innerHTML = '✔ 준비됐습니다.'; } return; }
+  if (d.fatal) { for (const b of boots) b.innerHTML = '⚠ 준비에 실패했습니다: ' + esc(d.fatal) + ' (인터넷 연결을 확인하고 새로고침하세요)'; return; }
   if (pending[d.id]) { pending[d.id](d.result); delete pending[d.id]; }
 };
 function rpc(cmd, args, transfer) {
@@ -216,15 +310,19 @@ for (const el of document.querySelectorAll('.drop')) {
   el.addEventListener('dragleave', () => el.classList.remove('over'));
   el.addEventListener('drop', e => { e.preventDefault(); el.classList.remove('over'); if (e.dataTransfer.files[0]) setFile(kind, e.dataTransfer.files[0]); });
 }
+const FILEKIND = {
+  contract: {re: /\.docx$/i, msg: '샘플 계약서는 .docx 파일이어야 합니다.', boxes: [['#dropC', '#fileC']]},
+  xsample: {re: /\.xlsx$/i, msg: '샘플 추가선택품목 계약서는 .xlsx 파일이어야 합니다. (.xls 는 Excel 에서 .xlsx 로 저장)', boxes: [['#dropX', '#fileX']]},
+  notice: {re: /\.hwpx?$/i, msg: '모집공고는 .hwp 파일이어야 합니다.', boxes: [['#dropN', '#fileN'], ['#dropN2', '#fileN2']]},
+};
 function setFile(kind, f) {
-  const ok = kind==='contract' ? /\.docx$/i.test(f.name) : /\.hwpx?$/i.test(f.name);
-  if (!ok) { showErr('errA', kind==='contract' ? '샘플 계약서는 .docx 파일이어야 합니다.' : '모집공고는 .hwp 파일이어야 합니다.'); return; }
+  const k = FILEKIND[kind], errId = $('#paneOption').classList.contains('hidden') ? 'errA' : 'errO';
+  if (!k.re.test(f.name)) { showErr(errId, k.msg); return; }
   files[kind] = f;
-  const box = kind==='contract' ? $('#dropC') : $('#dropN');
-  box.classList.add('ok');
-  (kind==='contract' ? $('#fileC') : $('#fileN')).textContent = f.name;
+  for (const [box, label] of k.boxes) { $(box).classList.add('ok'); $(label).textContent = f.name; }
   $('#btnAnalyze').disabled = !(files.contract && files.notice);
-  hideErr('errA');
+  if (typeof refreshOptButton === 'function') refreshOptButton();
+  hideErr('errA'); hideErr('errO');
 }
 function showErr(id, msg){ const e=$('#'+id); e.textContent=msg; e.style.display='block'; }
 function hideErr(id){ $('#'+id).style.display='none'; }
@@ -381,6 +479,124 @@ function setLink(a, bytes, name, type, label) {
   const url = URL.createObjectURL(new Blob([bytes], {type}));
   a.dataset.url = url; a.href = url; a.download = name; a.textContent = label;
 }
+
+// ================================================================ 탭 전환
+for (const b of document.querySelectorAll('.ttab')) {
+  b.addEventListener('click', () => {
+    for (const x of document.querySelectorAll('.ttab')) x.classList.toggle('on', x === b);
+    for (const p of ['paneContract', 'paneOption']) $('#' + p).classList.toggle('hidden', p !== b.dataset.pane);
+    try { localStorage.setItem('cb-tab', b.dataset.pane); } catch (e) {}
+  });
+}
+try { const t = localStorage.getItem('cb-tab'); if (t) document.querySelector(`.ttab[data-pane="${t}"]`)?.click(); } catch (e) {}
+
+// ================================================================ 추가선택품목 계약서
+let optPlan = null, optDecisions = {};
+const won = v => (v === null || v === undefined || v === '') ? '' : Number(v).toLocaleString('ko-KR');
+
+function refreshOptButton() { $('#btnOptAnalyze').disabled = !(files.xsample && files.notice); }
+
+$('#btnOptAnalyze').addEventListener('click', async () => {
+  hideErr('errO'); $('#spinO').style.display = 'inline-flex'; $('#btnOptAnalyze').disabled = true;
+  try {
+    const x = new Uint8Array(await files.xsample.arrayBuffer());
+    const n = new Uint8Array(await files.notice.arrayBuffer());
+    const j = await rpc('opt_analyze', {x, n, xname: files.xsample.name, nname: files.notice.name});
+    if (!j.ok) throw new Error(j.error);
+    optLoad(j.plan);
+  } catch (e) { showErr('errO', e.message || String(e)); }
+  finally { $('#spinO').style.display = 'none'; refreshOptButton(); }
+});
+
+function optLoad(p) {
+  optPlan = p; optDecisions = {};
+  for (const c of p.changes) optDecisions[c.id] = c.default;
+  $('#optResult').classList.remove('hidden');
+  $('#optDone').style.display = 'none'; hideErr('errOB');
+  $('#optName').value = p.default_name || '';
+  const nf = p.notice || {};
+  $('#optChips').innerHTML = [
+    nf.complex_name ? `<span class="chip k-info">${esc(nf.complex_name)}${nf.block ? ' · ' + esc(nf.block) + 'BL' : ''}</span>` : '',
+    `<span class="chip k-info">타입 시트 ${p.type_sheets.length}개</span>`,
+    p.new_sheets.length ? `<span class="chip k-add">새 시트 ${p.new_sheets.map(s => esc(s.type)).join(', ')}</span>` : '',
+    `<span class="chip k-update">금액·문구 변경 ${p.changes.length}</span>`,
+    p.warnings.length ? `<span class="chip" style="background:var(--warn-bg);color:#8a5a00">확인할 점 ${p.warnings.length}</span>` : '',
+  ].join('');
+  $('#optFields tbody').innerHTML = p.fields.map(f => `<tr data-key="${esc(f.key)}">
+    <td>${esc(f.label)}</td><td class="old">${esc(f.old) || '<span class="muted">(못 찾음)</span>'}</td>
+    <td><input type="text" value="${esc(f.new)}"></td><td><input type="checkbox" ${f.apply ? 'checked' : ''}></td></tr>`).join('');
+  $('#optRules tbody').innerHTML = p.rules.map(optRuleRow).join('');
+  $('#optWarnBox').classList.toggle('hidden', !p.warnings.length);
+  $('#optWarns').innerHTML = p.warnings.map(w => `<li>${esc(w)}</li>`).join('');
+  const tplOpts = t => p.type_sheets.map(s => `<option ${s === t ? 'selected' : ''}>${esc(s)}</option>`).join('');
+  $('#optBalcony tbody').innerHTML = p.balcony.map(b => {
+    const need = b.new_sheet && (b.value === null || b.value === undefined);
+    return `<tr data-type="${esc(b.type)}">
+      <td><b>${esc(b.type)}</b></td>
+      <td>${b.new_sheet
+        ? `<label class="chk"><input type="checkbox" class="nsApply" checked> 새 시트 만들기</label> · <select class="nsTpl">${tplOpts(b.template)}</select> 복사`
+        : '<span class="muted">기존 시트</span>'}</td>
+      <td><input type="text" class="bcode" value="${esc(b.code_new)}"></td>
+      <td class="old">${b.old !== null && b.old !== undefined ? won(b.old) : '-'}</td>
+      <td>${b.notice ? won(b.notice) : '<span style="color:var(--chk)">공고에 없음</span>'}</td>
+      <td><input type="text" class="bval" value="${b.value !== null && b.value !== undefined ? won(b.value) : ''}" ${need ? 'style="border-color:var(--chk);background:#fff8ee" placeholder="입력 필요"' : ''}></td></tr>`;
+  }).join('');
+  for (const inp of document.querySelectorAll('#optBalcony .bval')) {
+    inp.addEventListener('blur', () => { const d = inp.value.replace(/[^\d]/g, ''); inp.value = d ? won(d) : ''; });
+  }
+  renderOptChanges();
+  $('#optResult').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+function optRuleRow(r) {
+  return `<tr><td><input type="text" class="rold" value="${esc(r.old)}"></td><td><input type="text" class="rnew" value="${esc(r.new)}"></td>
+    <td class="muted">${r.count != null ? r.count + '칸' : '-'}</td><td><input type="checkbox" class="rap" ${r.apply ? 'checked' : ''}></td></tr>`;
+}
+$('#btnOptAddRule').addEventListener('click', () => $('#optRules tbody').insertAdjacentHTML('beforeend', optRuleRow({old: '', new: '', apply: true, count: null})));
+
+function renderOptChanges() {
+  const groups = [];
+  for (const c of optPlan.changes) { let g = groups.find(x => x.name === c.sheet); if (!g) groups.push(g = {name: c.sheet, items: [], isNew: c.new_sheet}); g.items.push(c); }
+  const fmt = (c, v) => c.kind === 'price' ? won(v) : esc(String(v ?? '')).replace(/\n/g, ' ⏎ ');
+  $('#optChanges').innerHTML = groups.map(g => `<div class="group">${esc(g.name)} 시트 ${g.isNew ? '<span class="chip k-add">새 시트</span>' : ''} <span class="muted" style="font-weight:400">${g.items.length}</span></div>
+    <table class="f optc"><tbody>${g.items.map(c => `<tr data-id="${c.id}" class="${optDecisions[c.id] ? '' : 'offrow'}">
+      <td style="width:74px"><label class="chk"><input type="checkbox" ${optDecisions[c.id] ? 'checked' : ''}> 적용</label></td>
+      <td style="width:28%">${esc(c.label)} <span class="muted">${esc(c.cell)}</span></td>
+      <td class="old"><del>${fmt(c, c.old)}</del></td><td><mark>${fmt(c, c.new)}</mark></td></tr>`).join('')}</tbody></table>`).join('')
+    || '<p class="muted">공고와 다른 금액·문구가 없습니다.</p>';
+  for (const cb of document.querySelectorAll('#optChanges input[type=checkbox]')) {
+    cb.addEventListener('change', () => { const tr = cb.closest('tr'); optDecisions[tr.dataset.id] = cb.checked; tr.classList.toggle('offrow', !cb.checked); });
+  }
+}
+$('#btnOptAllOn').addEventListener('click', () => { for (const c of optPlan.changes) optDecisions[c.id] = true; renderOptChanges(); });
+$('#btnOptAllOff').addEventListener('click', () => { for (const c of optPlan.changes) optDecisions[c.id] = false; renderOptChanges(); });
+
+$('#btnOptBuild').addEventListener('click', async () => {
+  hideErr('errOB'); $('#optDone').style.display = 'none'; $('#spinOB').style.display = 'inline-flex'; $('#btnOptBuild').disabled = true;
+  try {
+    const fields = {};
+    for (const tr of document.querySelectorAll('#optFields tbody tr[data-key]')) {
+      fields[tr.dataset.key] = {value: tr.querySelector('input[type=text]').value.trim(), apply: tr.querySelector('input[type=checkbox]').checked};
+    }
+    const rules = [...document.querySelectorAll('#optRules tbody tr')].map(tr => ({
+      old: tr.querySelector('.rold').value, new: tr.querySelector('.rnew').value, apply: tr.querySelector('.rap').checked})).filter(r => r.old.trim());
+    const balcony = {}, new_sheets = {};
+    for (const tr of document.querySelectorAll('#optBalcony tbody tr')) {
+      const t = tr.dataset.type;
+      balcony[t] = {value: tr.querySelector('.bval').value, code: tr.querySelector('.bcode').value};
+      const ns = tr.querySelector('.nsApply');
+      if (ns) new_sheets[t] = {apply: ns.checked, template: tr.querySelector('.nsTpl').value};
+    }
+    const j = await rpc('opt_build', {decisions: optDecisions, fields, rules, balcony, new_sheets, highlight: $('#optHl').checked, filename: $('#optName').value});
+    if (!j.ok) throw new Error(j.error);
+    const XT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    setLink($('#dlOptX'), j.xlsx, j.name, XT, `${j.name} 내려받기`);
+    setLink($('#dlOptR'), j.report, j.report_name, XT, `변경내역 (${j.report_name})`);
+    $('#optDone').style.display = 'flex';
+    $('#dlOptX').click();
+  } catch (e) { showErr('errOB', e.message || String(e)); }
+  finally { $('#spinOB').style.display = 'none'; $('#btnOptBuild').disabled = false; }
+});
 </script>
 </body>
 </html>
