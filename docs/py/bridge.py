@@ -21,7 +21,7 @@ def _bytes(x):
 
 def default_output_name(names):
     today = datetime.now().strftime('%y%m%d')
-    m = re.match(r'^\s*(\([^)]*\))', names.get('notice', ''))
+    m = re.match(r'^[\s★☆※■●\d._]*(\([^)]*\))', names.get('notice', ''))      # '★(현장) …', '260605_(현장) …'
     if m:
         return f'{m.group(1)} 공급계약서(안)_{today}.docx'
     base = os.path.splitext(names.get('contract', '공급계약서'))[0]
@@ -105,7 +105,7 @@ OPT = {}
 
 def opt_default_name(names):
     today = datetime.now().strftime('%y%m%d')
-    m = re.match(r'^\s*(\([^)]*\))', names.get('notice', ''))
+    m = re.match(r'^[\s★☆※■●\d._]*(\([^)]*\))', names.get('notice', ''))      # '★(현장) …', '260605_(현장) …'
     base = os.path.splitext(names.get('sample', '추가선택품목 계약서'))[0]
     core = re.sub(r'^\s*\([^)]*\)\s*', '', base)
     core = re.sub(r'_\d{6}.*$', '', core).strip() or '추가선택품목(유상옵션) 계약서(안)'

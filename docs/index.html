@@ -285,7 +285,7 @@ table.items td.st{width:64px;white-space:nowrap}
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const files = {contract:null, notice:null, xsample:null};
-const worker = new Worker('worker.js?v=2026.10.06b');
+const worker = new Worker('worker.js?v=2026.10.06c');
 let seq = 0, isReady = false;
 const pending = {};
 worker.onmessage = e => {
