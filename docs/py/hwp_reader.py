@@ -30,19 +30,77 @@ def _records(data):
         i += size
 
 
-def _para_text(rec):
-    out, j = [], 0
+EXTENDED = (1, 2, 3, 11, 12, 14, 15, 16, 17, 18, 21, 22, 23)     # 표·그림 등 하위 레코드(CTRL_HEADER)가 딸린 컨트롤
+INLINE = (4, 5, 6, 7, 8, 19, 20)
+
+
+def _deleted(rec):
+    """PARA_RANGE_TAG 에서 '변경 내용 추적'으로 지운 구간 [(시작, 끝)] (글자 단위).
+    태그 상위 8비트가 종류: 0x11 지움, 0x10 넣음, 0x12·0x13 서식/문단 변경, 0x02 형광펜."""
+    out = []
+    for k in range(0, len(rec) - 11, 12):
+        s, e, t = struct.unpack_from('<III', rec, k)
+        if t >> 24 == 0x11:
+            out.append((s, e))
+    return out
+
+
+def _para_text(rec, dele=()):
+    """문단 글자와, 지운 구간(dele) 안에 든 확장 컨트롤의 순번 set 을 돌려준다. 지운 글자는 뺀다."""
+    out, j, gone, n = [], 0, set(), 0
     while j + 1 < len(rec):
         c = struct.unpack_from('<H', rec, j)[0]
-        if c in (1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23):
+        cut = any(s <= j // 2 < e for s, e in dele)
+        if c in EXTENDED or c in INLINE:
+            if c in EXTENDED:
+                if cut:
+                    gone.add(n)
+                n += 1
             j += 16; continue          # 확장/인라인 컨트롤 (8 글자 분량)
+        j += 2
+        if cut: continue
         if c == 9: out.append('\t')
         elif c == 10: out.append('⏎')
         elif c == 24: out.append('-')
         elif c in (30, 31): out.append(' ')
         elif c >= 32: out.append(chr(c))
-        j += 2
-    return ''.join(out)
+    return ''.join(out), gone
+
+
+def _body(data):
+    """본문 레코드를 돌며 변경 추적으로 지운 글자·표를 뺀다.
+    (tag, level, rec) 를 내되 PARA_TEXT(67) 는 rec 대신 해석한 글자(str)를 낸다.
+    지운 문단(글자가 모두 지워짐)의 PARA_TEXT 는 None 이다."""
+    recs = list(_records(data))
+    ctrls = {}          # 문단 하위 level → [지운 컨트롤 순번, 지금까지 나온 컨트롤 수]
+    skip = None
+    for i, (tag, lvl, rec) in enumerate(recs):
+        if skip is not None:
+            if lvl > skip:
+                continue
+            skip = None
+        if tag == 66:
+            ctrls[lvl + 1] = [set(), 0]
+        elif tag == 67:
+            dele, k = [], i + 1
+            while k < len(recs) and recs[k][0] in (68, 69, 70) and recs[k][1] == lvl:
+                if recs[k][0] == 70:
+                    dele = _deleted(recs[k][2])
+                k += 1
+            text, gone = _para_text(rec, dele)
+            if lvl in ctrls:
+                ctrls[lvl][0] = gone
+            if dele and not text.replace('\r', '').strip():
+                text = None
+            yield tag, lvl, text
+            continue
+        elif tag == 71 and lvl in ctrls:
+            info = ctrls[lvl]
+            info[1] += 1
+            if info[1] - 1 in info[0]:
+                skip = lvl
+                continue
+        yield tag, lvl, rec
 
 
 def read_hwp(data):
@@ -81,7 +139,7 @@ def read_hwp(data):
                       key=lambda e: int(e[1][7:]))
     paras = []
     for sec in sections:
-        for tag, lvl, rec in _records(stream('/'.join(sec))):
+        for tag, lvl, rec in _body(stream('/'.join(sec))):
             if tag == 66:   # PARA_HEADER
                 ps = struct.unpack_from('<H', rec, 8)[0] if len(rec) >= 10 else 0
                 htype, hid = pshapes[ps] if ps < len(pshapes) else (0, 0)
@@ -90,7 +148,10 @@ def read_hwp(data):
                     pre = bullets[hid - 1] + ' '
                 paras.append({'level': lvl, 'text': pre, '_pre': pre})
             elif tag == 67 and paras:   # PARA_TEXT
-                paras[-1]['text'] = paras[-1]['_pre'] + _para_text(rec).replace('\r', '')
+                if rec is None:         # 변경 추적으로 통째 지운 문단
+                    paras.pop()
+                    continue
+                paras[-1]['text'] = paras[-1]['_pre'] + rec.replace('\r', '')
     for p in paras:
         p.pop('_pre', None)
         for k, v in BULLET_MAP.items():
@@ -117,7 +178,7 @@ def read_hwp_tables(data):
     for sec in sections:
         raw = ole.openstream('/'.join(sec)).read()
         body = zlib.decompress(raw, -15) if compressed else raw
-        for tag, lvl, rec in _records(body):
+        for tag, lvl, rec in _body(body):
             while stack and lvl <= stack[-1]['_lvl']:
                 stack.pop()
             if tag == 71 and rec[:4] == b' lbt':            # 표 컨트롤
@@ -129,8 +190,8 @@ def read_hwp_tables(data):
             elif tag == 72 and stack and lvl == stack[-1]['_lvl'] + 1 and len(rec) >= 16:   # 셀
                 col, row, cs, rs = struct.unpack_from('<HHHH', rec, 8)
                 stack[-1]['cells'].append({'r': row, 'c': col, 'rs': rs, 'cs': cs, 't': []})
-            elif tag == 67:
-                txt = _para_text(rec).replace('\r', '')
+            elif tag == 67 and rec is not None:
+                txt = rec.replace('\r', '')
                 for k, v in BULLET_MAP.items():
                     txt = txt.replace(k, v)
                 if stack and stack[-1]['cells']:

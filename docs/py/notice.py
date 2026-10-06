@@ -27,24 +27,28 @@ def _clean(s):
 
 
 def find_caution_range(paras):
-    """'유의사항' 대표 표의 시작/끝 문단 번호. 시작 다음에 '구분','내용' 머리글이 오는 곳을 찾는다."""
+    """'유의사항' 대표 표의 시작/끝 문단 번호. 시작 다음에 '구분','내용' 머리글이 오는 곳을 찾는다.
+    제목은 '유의사항' 또는 '유의사항 : …', 머리글은 '구 분'처럼 띄어 써도 된다."""
+    def heads(i):
+        return [re.sub(r'\s+', '', q['text']) for q in paras[i + 1:i + 14]]
     best = None
     for i, p in enumerate(paras):
-        if p['text'].strip() != '유의사항':
+        t = p['text'].strip()
+        if not (re.sub(r'\s+', '', t) == '유의사항' or re.match(r'유의사항\s*[:：]', t)):
             continue
-        nxt = [q['text'].strip() for q in paras[i + 1:i + 14]]
+        nxt = heads(i)
         if '구분' in nxt and '내용' in nxt:
             best = i
     if best is None:
         return None
-    start = best + [q['text'].strip() for q in paras[best + 1:best + 14]].index('내용') + 2
+    start = best + heads(best).index('내용') + 2
     base = paras[start - 1]['level']
     end = len(paras)
     for j in range(start, len(paras)):
         t = paras[j]['text'].strip()
         if paras[j]['level'] < base:
             end = j; break
-        if re.fullmatch(r'\d{1,2}', t) and paras[j]['level'] <= base:
+        if re.fullmatch(r'\d{1,2}|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ]', t) and paras[j]['level'] <= base:
             end = j; break
     return start, end, base
 
@@ -117,7 +121,7 @@ def extract_fields(paras):
             f['complex_name'] = name
             break
     for t in texts:
-        m = re.match(r'■?\s*공급위치\s*:\s*(.+)', t)
+        m = re.match(r'■?\s*공급\s*위치\s*:\s*(.+)', t)
         if m:
             f['location'] = m.group(1).strip()
             b = re.search(r'([A-Za-z]{1,4}\s*-?\s*\d{1,3})\s*(?:블록|블럭|BL)', f['location'])
@@ -132,7 +136,8 @@ def extract_fields(paras):
                 break
     # 공급금액 및 납부일정 표의 날짜 줄
     for i, t in enumerate(texts):
-        if '납부일정' in t and ('공급금액' in t or '분양금액' in t):
+        key = re.sub(r'\s+', '', t)
+        if '납부일정' in key and ('공급금액' in key or '분양금액' in key):
             for j in range(i, min(i + 120, len(texts))):
                 if re.fullmatch(r'계약\s*(체결)?\s*시', texts[j]):
                     dates = []
@@ -155,7 +160,7 @@ def extract_fields(paras):
                     bank = s
                 elif acct is None and ACCT_RE.match(s):
                     acct = s
-                elif acct and holder is None and ('신탁' in s or '(주)' in s or '㈜' in s) and len(s) < 30:
+                elif acct and holder is None and re.search(r'신탁|\(주\)|㈜|주식회사|공사|금융센터', s) and len(s) < 30:
                     holder = s
                 if bank and acct and holder:
                     break

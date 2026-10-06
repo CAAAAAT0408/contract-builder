@@ -268,7 +268,7 @@ table.f select{padding:4px 6px;border:1px solid #cfd5dd;border-radius:6px;font:i
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const files = {contract:null, notice:null, xsample:null};
-const worker = new Worker('worker.js?v=2026.10.02b');
+const worker = new Worker('worker.js?v=2026.10.06a');
 let seq = 0, isReady = false;
 const pending = {};
 worker.onmessage = e => {
@@ -535,7 +535,7 @@ function optLoad(p) {
       <td><b>${esc(b.type)}</b></td>
       <td>${b.new_sheet
         ? `<label class="chk"><input type="checkbox" class="nsApply" checked> 새 시트 만들기</label> · <select class="nsTpl">${tplOpts(b.template)}</select> 복사`
-        : '<span class="muted">기존 시트</span>'}</td>
+        : `<span class="muted">기존 시트${b.sheet && b.sheet !== b.type ? ` (${esc(b.sheet)})` : ''}</span>`}</td>
       <td><input type="text" class="bcode" value="${esc(b.code_new)}"></td>
       <td class="old">${b.old !== null && b.old !== undefined ? won(b.old) : '-'}</td>
       <td>${b.notice ? won(b.notice) : '<span style="color:var(--chk)">공고에 없음</span>'}</td>
