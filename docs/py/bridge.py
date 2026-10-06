@@ -158,7 +158,8 @@ def opt_build(req_json):
         balcony[k] = {'value': int(val) if val else None, 'code': (v.get('code') or '').strip()}
     try:
         data, log = build_options(OPT['x'], plan, decisions, fields, rules, balcony, req.get('new_sheets') or {},
-                                  bool(req.get('highlight')))
+                                  bool(req.get('highlight')), req.get('delete_sheets') or {}, req.get('renames') or {},
+                                  {k: [int(i) for i in v] for k, v in (req.get('keep_names') or {}).items()})
     except (OptionError, XlsxError) as e:
         return json.dumps({'ok': False, 'error': str(e)}, ensure_ascii=False)
     name = re.sub(r'[\\/:*?"<>|]', '_', req.get('filename') or opt_default_name(OPT['names'])).strip()

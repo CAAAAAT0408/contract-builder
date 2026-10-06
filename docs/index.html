@@ -47,7 +47,7 @@ label.chk{display:inline-flex;gap:6px;align-items:center;cursor:pointer;user-sel
 .spin i{width:16px;height:16px;border:2px solid #c9cfd8;border-top-color:var(--accent);border-radius:50%;animation:r .8s linear infinite}
 @keyframes r{to{transform:rotate(360deg)}}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
-.chip{border-radius:999px;padding:3px 11px;font-size:12.5px;font-weight:600}
+.chip{border-radius:999px;padding:3px 11px;font-size:12.5px;font-weight:600;white-space:nowrap}
 .k-update{background:var(--upd-soft);color:var(--upd)} .k-add{background:var(--add-soft);color:var(--add)}
 .k-check{background:var(--chk-soft);color:var(--chk)} .k-dong{background:var(--dong-soft);color:var(--dong)}
 .k-info{background:var(--info-soft);color:var(--info)}
@@ -96,6 +96,19 @@ tr.offrow td{opacity:.45}
 tr.offrow td:first-child{opacity:1}
 table.f select{padding:4px 6px;border:1px solid #cfd5dd;border-radius:6px;font:inherit}
 .help{font-size:12.5px;color:var(--muted);margin:0 0 10px}
+details.sheet{border:1px solid var(--line);border-radius:8px;margin:8px 0;background:#fff}
+details.sheet > summary{cursor:pointer;padding:9px 12px;font-weight:700;color:var(--accent);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+details.sheet[open] > summary{border-bottom:1px solid var(--line)}
+.secbox{padding:10px 12px 12px;overflow-x:auto}
+table.items{min-width:620px}
+.secbox + .secbox{border-top:1px dashed var(--line)}
+.sechead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.secbox.off table,.secbox.off .gone{opacity:.45}
+table.items td{padding:5px 8px;font-size:13px;vertical-align:top}
+table.items td.no{width:56px;color:var(--muted);white-space:nowrap}
+table.items td.price{text-align:right;white-space:nowrap;width:150px}
+table.items td.st{width:64px;white-space:nowrap}
+.gone{font-size:12.5px;color:var(--muted);margin-top:6px}
 </style>
 </head>
 <body>
@@ -232,17 +245,21 @@ table.f select{padding:4px 6px;border:1px solid #cfd5dd;border-radius:6px;font:i
   </section>
 
   <section class="card">
-    <h2><span class="no">3</span>타입별 발코니 확장 · 새 시트 <span class="sub">공고에 금액이 비어 있으면 직접 넣으세요. 비워 두면 샘플 금액을 그대로 둡니다.</span></h2>
+    <h2><span class="no">3</span>시트 · 발코니 확장 <span class="sub">공고의 타입마다 시트 하나. 공고에 금액이 비어 있으면 직접 넣으세요 (비워 두면 샘플 금액 그대로).</span></h2>
     <div class="body">
       <table class="f" id="optBalcony">
         <thead><tr><th style="width:70px">타입</th><th>시트</th><th style="width:16%">주택형 표기</th><th style="width:13%">샘플 금액</th><th style="width:13%">공고 금액</th><th style="width:17%">넣을 금액 (원)</th></tr></thead>
         <tbody></tbody>
       </table>
+      <div id="optSheetOps" class="hidden">
+        <h3 style="font-size:13.5px;margin:18px 0 6px">지우거나 이름을 바꿀 시트 <span class="muted" style="font-weight:400">— 체크된 것만 합니다</span></h3>
+        <table class="f" id="optSheetOpsT"><thead><tr><th style="width:24%">시트</th><th>할 일</th><th style="width:60px">적용</th></tr></thead><tbody></tbody></table>
+      </div>
     </div>
   </section>
 
   <section class="card">
-    <h2><span class="no">4</span>금액 · 문구 변경 <span class="sub">시스템에어컨·유상옵션·패키지에서 공고와 다른 칸입니다. 체크된 것만 반영됩니다.</span></h2>
+    <h2><span class="no">4</span>품목 표 (공고 기준) <span class="sub">시스템에어컨·추가선택품목·패키지 표를 공고에 나온 품목·순서·금액대로 다시 짭니다. 체크를 끈 표는 샘플 그대로 둡니다.</span></h2>
     <div class="body">
       <div class="row" style="margin:0 0 6px"><button class="btn ghost sm" id="btnOptAllOn">모두 체크</button><button class="btn ghost sm" id="btnOptAllOff">모두 해제</button></div>
       <div id="optChanges"></div>
@@ -268,7 +285,7 @@ table.f select{padding:4px 6px;border:1px solid #cfd5dd;border-radius:6px;font:i
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const files = {contract:null, notice:null, xsample:null};
-const worker = new Worker('worker.js?v=2026.10.06a');
+const worker = new Worker('worker.js?v=2026.10.06b');
 let seq = 0, isReady = false;
 const pending = {};
 worker.onmessage = e => {
@@ -491,7 +508,7 @@ for (const b of document.querySelectorAll('.ttab')) {
 try { const t = localStorage.getItem('cb-tab'); if (t) document.querySelector(`.ttab[data-pane="${t}"]`)?.click(); } catch (e) {}
 
 // ================================================================ 추가선택품목 계약서
-let optPlan = null, optDecisions = {};
+let optPlan = null, optDecisions = {}, optKeep = {};
 const won = v => (v === null || v === undefined || v === '') ? '' : Number(v).toLocaleString('ko-KR');
 
 function refreshOptButton() { $('#btnOptAnalyze').disabled = !(files.xsample && files.notice); }
@@ -509,7 +526,7 @@ $('#btnOptAnalyze').addEventListener('click', async () => {
 });
 
 function optLoad(p) {
-  optPlan = p; optDecisions = {};
+  optPlan = p; optDecisions = {}; optKeep = {};
   for (const c of p.changes) optDecisions[c.id] = c.default;
   $('#optResult').classList.remove('hidden');
   $('#optDone').style.display = 'none'; hideErr('errOB');
@@ -519,7 +536,8 @@ function optLoad(p) {
     nf.complex_name ? `<span class="chip k-info">${esc(nf.complex_name)}${nf.block ? ' · ' + esc(nf.block) + 'BL' : ''}</span>` : '',
     `<span class="chip k-info">타입 시트 ${p.type_sheets.length}개</span>`,
     p.new_sheets.length ? `<span class="chip k-add">새 시트 ${p.new_sheets.map(s => esc(s.type)).join(', ')}</span>` : '',
-    `<span class="chip k-update">금액·문구 변경 ${p.changes.length}</span>`,
+    (p.delete_sheets || []).filter(d => d.apply).length ? `<span class="chip k-check">지울 시트 ${p.delete_sheets.filter(d => d.apply).map(d => esc(d.sheet)).join(', ')}</span>` : '',
+    `<span class="chip k-update">고칠 품목 표 ${p.changes.filter(c => !c.hidden && c.changed).length}</span>`,
     p.warnings.length ? `<span class="chip" style="background:var(--warn-bg);color:#8a5a00">확인할 점 ${p.warnings.length}</span>` : '',
   ].join('');
   $('#optFields tbody').innerHTML = p.fields.map(f => `<tr data-key="${esc(f.key)}">
@@ -544,6 +562,10 @@ function optLoad(p) {
   for (const inp of document.querySelectorAll('#optBalcony .bval')) {
     inp.addEventListener('blur', () => { const d = inp.value.replace(/[^\d]/g, ''); inp.value = d ? won(d) : ''; });
   }
+  const ops = [...(p.delete_sheets || []).map(d => ({kind: 'del', sheet: d.sheet, text: `시트 지우기 <span class="muted">(${esc(d.reason)})</span>`, on: d.apply})),
+               ...(p.renames || []).map(r => ({kind: 'ren', sheet: r.sheet, text: `이름을 <b>${esc(r.new)}</b> 로 바꾸기${r.hidden_clash ? ' <span class="muted">(같은 이름의 숨긴 시트도 지울 때만 바뀝니다)</span>' : ''}`, on: r.apply}))];
+  $('#optSheetOps').classList.toggle('hidden', !ops.length);
+  $('#optSheetOpsT tbody').innerHTML = ops.map(o => `<tr data-kind="${o.kind}" data-sheet="${esc(o.sheet)}"><td><b>${esc(o.sheet)}</b></td><td>${o.text}</td><td><input type="checkbox" ${o.on ? 'checked' : ''}></td></tr>`).join('');
   renderOptChanges();
   $('#optResult').scrollIntoView({behavior: 'smooth', block: 'start'});
 }
@@ -556,20 +578,48 @@ $('#btnOptAddRule').addEventListener('click', () => $('#optRules tbody').insertA
 
 function renderOptChanges() {
   const groups = [];
-  for (const c of optPlan.changes) { let g = groups.find(x => x.name === c.sheet); if (!g) groups.push(g = {name: c.sheet, items: [], isNew: c.new_sheet}); g.items.push(c); }
-  const fmt = (c, v) => c.kind === 'price' ? won(v) : esc(String(v ?? '')).replace(/\n/g, ' ⏎ ');
-  $('#optChanges').innerHTML = groups.map(g => `<div class="group">${esc(g.name)} 시트 ${g.isNew ? '<span class="chip k-add">새 시트</span>' : ''} <span class="muted" style="font-weight:400">${g.items.length}</span></div>
-    <table class="f optc"><tbody>${g.items.map(c => `<tr data-id="${c.id}" class="${optDecisions[c.id] ? '' : 'offrow'}">
-      <td style="width:74px"><label class="chk"><input type="checkbox" ${optDecisions[c.id] ? 'checked' : ''}> 적용</label></td>
-      <td style="width:28%">${esc(c.label)} <span class="muted">${esc(c.cell)}</span></td>
-      <td class="old"><del>${fmt(c, c.old)}</del></td><td><mark>${fmt(c, c.new)}</mark></td></tr>`).join('')}</tbody></table>`).join('')
-    || '<p class="muted">공고와 다른 금액·문구가 없습니다.</p>';
-  for (const cb of document.querySelectorAll('#optChanges input[type=checkbox]')) {
-    cb.addEventListener('change', () => { const tr = cb.closest('tr'); optDecisions[tr.dataset.id] = cb.checked; tr.classList.toggle('offrow', !cb.checked); });
+  for (const c of optPlan.changes) {
+    if (c.hidden) continue;
+    let g = groups.find(x => x.name === c.sheet);
+    if (!g) groups.push(g = {name: c.sheet, items: [], isNew: c.new_sheet});
+    g.items.push(c);
+  }
+  const ST = {new: '<span class="chip k-add">추가</span>', price: '<span class="chip k-update">금액</span>', text: '<span class="chip k-check">이름</span>', same: '<span class="muted" style="font-size:12px">그대로</span>'};
+  const one = s => esc(String(s ?? '')).replace(/\n/g, ' ');
+  const rowHtml = (r, i, c) => `<tr><td class="no">${one(r.no)}</td><td style="width:16%">${one(r.cat)}</td>
+      <td>${r.status === 'text' && r.old_name ? `<del>${one(r.old_name)}</del><br>` : ''}${r.status === 'new' || r.status === 'text' ? `<mark>${one(r.name)}</mark>` : one(r.name)}
+      ${r.alt ? `<br><label class="chk" style="font-size:12px;color:var(--muted)"><input type="checkbox" class="keep" data-i="${i}" ${(optKeep[c.id] || []).includes(i) ? 'checked' : ''}> 샘플 표기 그대로 두기</label>` : ''}</td>
+      <td style="width:18%">${r.old_brand ? `<del>${one(r.old_brand)}</del><br><mark>${one(r.brand)}</mark>` : one(r.brand)}</td>
+      <td class="price">${r.status === 'price' && r.old != null ? `<del>${won(r.old)}</del> ` : ''}${r.status === 'price' || r.status === 'new' ? `<mark>${won(r.price)}</mark>` : won(r.price)}</td>
+      <td class="st">${ST[r.status] || ''}</td></tr>`;
+  const secHtml = c => {
+    const s = c.summary, on = optDecisions[c.id];
+    const tags = [s.add ? `추가 ${s.add}` : '', s.del ? `삭제 ${s.del}` : '', s.price ? `금액 ${s.price}` : '', s.text ? `이름 ${s.text}` : ''].filter(Boolean).join(' · ') || '바뀐 것 없음';
+    return `<div class="secbox ${on ? '' : 'off'}" data-id="${c.id}"><div class="sechead">
+        <label class="chk"><input type="checkbox" ${on ? 'checked' : ''}> 적용</label><b>${esc(c.label)}</b>
+        <span class="muted">샘플 ${s.before}줄 → ${s.after}줄 · ${tags}</span></div>
+      ${c.rows.length ? `<table class="f items"><tbody>${c.rows.map((r, i) => rowHtml(r, i, c)).join('')}</tbody></table>` : ''}
+      ${c.removed.length ? `<div class="gone">지우는 줄: ${c.removed.map(r => `<del>${one(r.name)}${r.price ? ' ' + won(r.price) : ''}</del>`).join(' ')}</div>` : ''}</div>`;
+  };
+  $('#optChanges').innerHTML = groups.map((g, i) => {
+    const n = g.items.filter(c => c.changed).length;
+    return `<details class="sheet" ${i === 0 ? 'open' : ''}><summary>${esc(g.name)} 시트 ${g.isNew ? '<span class="chip k-add">새 시트</span>' : ''}
+      <span class="muted" style="font-weight:400">${n ? `고칠 표 ${n}` : '바뀐 것 없음'}</span></summary>${g.items.map(secHtml).join('')}</details>`;
+  }).join('') || '<p class="muted">고칠 품목 표가 없습니다.</p>';
+  for (const cb of document.querySelectorAll('#optChanges .sechead input[type=checkbox]')) {
+    cb.addEventListener('change', () => { const box = cb.closest('.secbox'); optDecisions[box.dataset.id] = cb.checked; box.classList.toggle('off', !cb.checked); });
+  }
+  for (const cb of document.querySelectorAll('#optChanges input.keep')) {
+    cb.addEventListener('change', () => {
+      const id = cb.closest('.secbox').dataset.id, i = Number(cb.dataset.i);
+      const set = new Set(optKeep[id] || []);
+      cb.checked ? set.add(i) : set.delete(i);
+      optKeep[id] = [...set];
+    });
   }
 }
-$('#btnOptAllOn').addEventListener('click', () => { for (const c of optPlan.changes) optDecisions[c.id] = true; renderOptChanges(); });
-$('#btnOptAllOff').addEventListener('click', () => { for (const c of optPlan.changes) optDecisions[c.id] = false; renderOptChanges(); });
+$('#btnOptAllOn').addEventListener('click', () => { for (const c of optPlan.changes) if (!c.hidden) optDecisions[c.id] = true; renderOptChanges(); });
+$('#btnOptAllOff').addEventListener('click', () => { for (const c of optPlan.changes) if (!c.hidden) optDecisions[c.id] = false; renderOptChanges(); });
 
 $('#btnOptBuild').addEventListener('click', async () => {
   hideErr('errOB'); $('#optDone').style.display = 'none'; $('#spinOB').style.display = 'inline-flex'; $('#btnOptBuild').disabled = true;
@@ -587,7 +637,11 @@ $('#btnOptBuild').addEventListener('click', async () => {
       const ns = tr.querySelector('.nsApply');
       if (ns) new_sheets[t] = {apply: ns.checked, template: tr.querySelector('.nsTpl').value};
     }
-    const j = await rpc('opt_build', {decisions: optDecisions, fields, rules, balcony, new_sheets, highlight: $('#optHl').checked, filename: $('#optName').value});
+    const delete_sheets = {}, renames = {};
+    for (const tr of document.querySelectorAll('#optSheetOpsT tbody tr')) {
+      (tr.dataset.kind === 'del' ? delete_sheets : renames)[tr.dataset.sheet] = tr.querySelector('input').checked;
+    }
+    const j = await rpc('opt_build', {decisions: optDecisions, fields, rules, balcony, new_sheets, delete_sheets, renames, keep_names: optKeep, highlight: $('#optHl').checked, filename: $('#optName').value});
     if (!j.ok) throw new Error(j.error);
     const XT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     setLink($('#dlOptX'), j.xlsx, j.name, XT, `${j.name} 내려받기`);

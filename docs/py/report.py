@@ -93,12 +93,15 @@ def make_option_report(plan, decisions, log, names):
     for row in ws.iter_rows(min_row=2):
         for c in row:
             c.alignment = Alignment(wrap_text=True, vertical='top')
-    off = [ch for ch in plan['changes'] if not decisions.get(ch['id'], ch['default'])]
+    off = [ch for ch in plan['changes'] if not ch.get('hidden') and not decisions.get(ch['id'], ch['default'])]
     if off:
         ws2 = wb.create_sheet('제외한 변경')
-        ws2.append(['시트', '칸', '항목', '지금', '공고'])
+        ws2.append(['시트', '표', '샘플 줄 수', '공고 기준 줄 수', '공고 기준 품목'])
         for ch in off:
-            ws2.append([ch['sheet'], ch['cell'], ch['label'], str(ch['old']), str(ch['new'])])
+            s = ch.get('summary', {})
+            names = ', '.join(' '.join(x for x in (r.get('no'), r.get('name'), r.get('brand')) if x).replace('\n', ' ')
+                              for r in ch.get('rows', []))
+            ws2.append([ch['sheet'], ch['label'], s.get('before'), s.get('after'), names])
     if plan.get('warnings'):
         ws3 = wb.create_sheet('확인할 점')
         for w in plan['warnings']:

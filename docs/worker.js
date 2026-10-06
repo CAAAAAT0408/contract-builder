@@ -1,6 +1,6 @@
 // 브라우저 안에서 Python(Pyodide)을 띄워 계약서 엔진을 돌린다.
 // 계약서·공고 파일은 이 브라우저 밖으로 나가지 않는다.
-const VERSION = '2026.10.06a';
+const VERSION = '2026.10.06b';
 const PYODIDE = 'https://cdn.jsdelivr.net/pyodide/v0.29.5/full/';
 const PY_FILES = ['hwp_reader.py', 'notice.py', 'contract.py', 'engine.py', 'report.py', 'xlsxio.py', 'options.py', 'bridge.py'];
 const WHEELS = ['olefile-0.47-py2.py3-none-any.whl', 'et_xmlfile-2.0.0-py3-none-any.whl', 'openpyxl-3.1.5-py2.py3-none-any.whl'];

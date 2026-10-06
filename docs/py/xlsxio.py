@@ -1,11 +1,14 @@
 """엑셀(.xlsx)을 내부 XML 그대로 고친다. 서식·인쇄설정·셀 안 글자서식(리치텍스트)을 건드리지 않는다.
 
-지원: 셀 글자/숫자 읽기·쓰기, 문자열 바꾸기(리치텍스트 유지), 시트 복사(인쇄영역 포함),
+지원: 셀 글자/숫자 읽기·쓰기, 문자열 바꾸기(리치텍스트 유지), 시트 복사(인쇄영역·그림·메모 포함)·삭제,
+      행 넣기·지우기(수식·병합·인쇄영역·페이지 나누기·그림·메모 위치를 같이 옮김),
       간단한 수식(사칙연산·셀참조, 공유수식 포함)의 표시값 재계산, 바뀐 칸 노란색 표시.
 """
 import copy
 import io
+import posixpath
 import re
+import uuid
 import zipfile
 
 from lxml import etree
@@ -14,6 +17,7 @@ NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 RNS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 PNS = 'http://schemas.openxmlformats.org/package/2006/relationships'
 CNS = 'http://schemas.openxmlformats.org/package/2006/content-types'
+XDR = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
 WS_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet'
 WS_CT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'
 XML_SPACE = '{http://www.w3.org/XML/1998/namespace}space'
@@ -197,6 +201,269 @@ class Sheet:
         c.set('s', str(self.book.yellow_style(int(c.get('s') or 0))))
         self.book.touched.add(self.path)
 
+    def shrink(self, ref):
+        """'셀에 맞춤' 켜기 (자릿수가 늘어난 금액이 ##### 로 보이지 않게)"""
+        c = self.cells.get(ref)
+        if c is not None:
+            c.set('s', str(self.book.shrink_style(int(c.get('s') or 0))))
+            self.book.touched.add(self.path)
+
+    def clear(self, ref):
+        """값·수식만 지우고 서식은 둔다."""
+        c = self.cells.get(ref)
+        if c is not None:
+            self._clear(c)
+            self.book.touched.add(self.path)
+
+    def style(self, ref):
+        c = self.cells.get(ref)
+        return int(c.get('s') or 0) if c is not None else None
+
+    def set_style(self, ref, s):
+        self._cell(ref).set('s', str(s))
+
+    # ---------------------------------------------------------------- 병합
+    def unmerge(self, ref):
+        mc = self.root.find(q('mergeCells'))
+        if mc is None:
+            return
+        for m in list(mc):
+            if m.get('ref') == ref:
+                mc.remove(m)
+        mc.set('count', str(len(mc)))
+
+    def merge(self, ref):
+        if ':' not in ref:
+            return
+        mc = self.root.find(q('mergeCells'))
+        if mc is None:
+            mc = etree.Element(q('mergeCells'))
+            # mergeCells 는 sheetData / sheetCalcPr / sheetProtection / protectedRanges / scenarios / autoFilter / sortState
+            #   / dataConsolidate / customSheetViews 다음 자리
+            anchor = self.data
+            for tag in ('sheetCalcPr', 'sheetProtection', 'protectedRanges', 'scenarios', 'autoFilter', 'sortState',
+                        'dataConsolidate', 'customSheetViews'):
+                e = self.root.find(q(tag))
+                if e is not None:
+                    anchor = e
+            anchor.addnext(mc)
+        m = etree.SubElement(mc, q('mergeCell'))
+        m.set('ref', ref)
+        mc.set('count', str(len(mc)))
+        self.book.touched.add(self.path)
+
+    # ---------------------------------------------------------------- 행 넣기·지우기
+    def unshare(self):
+        """공유수식을 칸마다 따로 쓴 수식으로 푼다 (행을 옮기거나 복사해도 안전하게)."""
+        masters = {}
+        for ref, c in self.cells.items():
+            f = c.find(q('f'))
+            if f is not None and f.get('t') == 'shared' and f.text:
+                masters[f.get('si')] = (ref, f.text)
+        for ref, c in self.cells.items():
+            f = c.find(q('f'))
+            if f is None or f.get('t') != 'shared':
+                continue
+            if not f.text:
+                base = masters.get(f.get('si'))
+                if not base:
+                    continue
+                f.text = _shift(base[1], cell_key(ref)[0] - cell_key(base[0])[0], cell_key(ref)[1] - cell_key(base[0])[1])
+            for a in ('t', 'si', 'ref'):
+                f.attrib.pop(a, None)
+        self.book.touched.add(self.path)
+
+    def insert_rows(self, at, n):
+        """at 행 앞에 빈 행 n 개를 넣는다 (at 부터 아래는 n 줄씩 밀림)."""
+        if n > 0:
+            self._move_rows(RowMap('ins', at, n))
+
+    def delete_rows(self, at, n):
+        """at 행부터 n 개를 지운다."""
+        if n > 0:
+            self._move_rows(RowMap('del', at, n))
+
+    def row_copy(self, r):
+        """r 행 XML 사본 (나중에 put_row 로 다른 자리에 붙인다). 공유수식은 미리 unshare() 로 풀어 둘 것."""
+        row = self.rows.get(r)
+        return (r, copy.deepcopy(row)) if row is not None else (r, None)
+
+    def put_row(self, snap, dst):
+        """row_copy 로 떠 둔 행을 dst 자리에 놓는다 (있던 행은 바꿈). 수식은 행 차이만큼 옮긴다."""
+        src, el = snap
+        old = self.rows.get(dst)
+        if el is None:
+            if old is not None:
+                self.data.remove(old)
+            self._index()
+            return
+        row = copy.deepcopy(el)
+        row.set('r', str(dst))
+        for c in row.findall(q('c')):
+            col, _ = split_ref(c.get('r'))
+            c.set('r', f'{col}{dst}')
+            f = c.find(q('f'))
+            if f is not None and f.text and dst != src:
+                f.text = _shift(f.text, dst - src, 0)
+        if old is not None:
+            old.addprevious(row)
+            self.data.remove(old)
+        else:
+            after = [k for k in self.rows if k < dst]
+            if after:
+                self.rows[max(after)].addnext(row)
+            else:
+                self.data.insert(0, row)
+        self._index()
+        self.book.touched.add(self.path)
+
+    def _move_rows(self, rm):
+        self.unshare()
+        # 1) 행·칸 번호
+        for row in list(self.data.findall(q('row'))):
+            r = int(row.get('r'))
+            nr = rm.one(r)
+            if nr is None:
+                self.data.remove(row)
+                continue
+            if nr != r:
+                row.set('r', str(nr))
+                for c in row.findall(q('c')):
+                    col, _ = split_ref(c.get('r'))
+                    c.set('r', f'{col}{nr}')
+        # 2) 수식: 이 시트 전부 + 이 시트를 가리키는 다른 시트 수식
+        for sh in self.book.all_sheets():
+            local = sh is self
+            hit = False
+            for c in sh.data.iter(q('c')):
+                f = c.find(q('f'))
+                if f is None:
+                    continue
+                if f.text and (local or self.name in f.text):
+                    nt = _map_refs(f.text, rm, self.name, local)
+                    if nt != f.text:
+                        f.text = nt
+                        hit = True
+                if local and f.get('ref'):
+                    v = _map_sqref(f.get('ref'), rm)
+                    if v:
+                        f.set('ref', v)
+            if hit:
+                self.book.touched.add(sh.path)
+        # 3) 병합
+        mc = self.root.find(q('mergeCells'))
+        if mc is not None:
+            for m in list(mc):
+                v = _map_sqref(m.get('ref'), rm)
+                if not v or ':' not in v or v.split(':')[0] == v.split(':')[1]:
+                    mc.remove(m)
+                else:
+                    m.set('ref', v)
+            mc.set('count', str(len(mc)))
+            if not len(mc):
+                self.root.remove(mc)
+        # 4) 범위를 적어 두는 그 밖의 자리
+        for tag, attr, drop in (('dimension', 'ref', False), ('selection', 'sqref', False),
+                                ('conditionalFormatting', 'sqref', True), ('dataValidation', 'sqref', True),
+                                ('hyperlink', 'ref', True), ('ignoredError', 'sqref', True),
+                                ('protectedRange', 'sqref', True), ('autoFilter', 'ref', True)):
+            for e in list(self.root.iter(q(tag))):
+                v = e.get(attr)
+                if not v:
+                    continue
+                nv = _map_sqref(v, rm)
+                if nv:
+                    e.set(attr, nv)
+                elif drop:
+                    e.getparent().remove(e)
+                else:
+                    e.set(attr, f'A{rm.start}')
+        for e in self.root.iter(q('selection'), q('pane'), q('sheetView')):
+            for attr in ('activeCell', 'topLeftCell'):
+                v = e.get(attr)
+                if v and re.fullmatch(r'[A-Z]+\d+', v):
+                    nv = _map_sqref(v, rm)
+                    e.set(attr, nv or f'{split_ref(v)[0]}{rm.start}')
+        for e in self.root.iter(q('formula'), q('formula1'), q('formula2')):
+            if e.text:
+                e.text = _map_refs(e.text, rm, self.name, True)
+        rb = self.root.find(q('rowBreaks'))
+        if rb is not None:
+            for b in list(rb):
+                nr = rm.one(int(b.get('id')))
+                if nr is None:
+                    nr = rm.start - 1
+                if nr < 1 or any(int(x.get('id')) == nr for x in rb if x is not b):
+                    rb.remove(b)
+                else:
+                    b.set('id', str(nr))
+            rb.set('count', str(len(rb)))
+            if rb.get('manualBreakCount') is not None:
+                rb.set('manualBreakCount', str(sum(1 for x in rb if x.get('man') == '1')))
+        # 5) 인쇄영역 등 이름 정의
+        self.book.map_defined_names(self.name, rm)
+        # 6) 그림·메모
+        self._move_objects(rm)
+        self._index()
+        self.book.touched.add(self.path)
+
+    def rel_parts(self):
+        """[(관계 종류, 부품 경로)] — drawing, comments, vmlDrawing, printerSettings …"""
+        return self.book.part_rels(self.path)
+
+    def _move_objects(self, rm):
+        files = self.book.files
+        for kind, part in self.rel_parts():
+            if part not in files:
+                continue
+            if kind == 'drawing':
+                root = etree.fromstring(files[part])
+                for tag in ('from', 'to'):
+                    for e in root.iter('{%s}%s' % (XDR, tag)):
+                        re_ = e.find('{%s}row' % XDR)
+                        if re_ is None or not (re_.text or '').strip().isdigit():
+                            continue
+                        r = int(re_.text) + 1
+                        nr = rm.one(r)
+                        re_.text = str((nr if nr is not None else rm.start) - 1)
+                files[part] = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=True)
+            elif kind in ('comments', 'threadedComment'):
+                root = etree.fromstring(files[part])
+                for e in list(root.iter()):
+                    if not isinstance(e.tag, str) or e.get('ref') is None:
+                        continue
+                    nv = _map_sqref(e.get('ref'), rm)
+                    if nv:
+                        e.set('ref', nv)
+                    else:
+                        e.getparent().remove(e)
+                files[part] = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=True)
+            elif kind == 'vmlDrawing':
+                txt = files[part].decode('utf-8', 'replace')
+
+                def shape(m):
+                    blk = m.group(0)
+                    rm_ = re.search(r'<x:Row>(\d+)</x:Row>', blk)
+                    if not rm_:
+                        return blk
+                    r = int(rm_.group(1)) + 1
+                    nr = rm.one(r)
+                    if nr is None:
+                        return ''
+                    d = nr - r
+                    if not d:
+                        return blk
+                    blk = blk.replace(rm_.group(0), f'<x:Row>{nr - 1}</x:Row>')
+
+                    def anchor(a):
+                        v = [x.strip() for x in a.group(1).split(',')]
+                        if len(v) == 8:
+                            v[2], v[6] = str(int(v[2]) + d), str(int(v[6]) + d)
+                        return '<x:Anchor>' + ', '.join(v) + '</x:Anchor>'
+                    return re.sub(r'<x:Anchor>([^<]*)</x:Anchor>', anchor, blk)
+                txt = re.sub(r'<v:shape\b.*?</v:shape>', shape, txt, flags=re.S)
+                files[part] = txt.encode('utf-8')
+
     # ---------------------------------------------------------------- 수식 표시값 다시 계산
     def recalc(self):
         """사칙연산·셀참조만 있는 수식의 표시값(<v>)을 다시 계산한다. 못 푸는 수식은 값을 지워 Excel 이 계산하게 둔다."""
@@ -238,6 +505,7 @@ class Sheet:
             if res is _FAIL:
                 if v is not None:
                     c.remove(v)
+                    c.attrib.pop('t', None)
                 continue
             if v is None:
                 v = etree.SubElement(c, q('v'))
@@ -265,6 +533,98 @@ def _shift(expr, dr, dc):
             row = str(int(row) + dr)
         return f'{cabs}{col}{rabs}{row}'
     return re.sub(r'(?<![A-Za-z_])(\$?)([A-Z]{1,3})(\$?)(\d+)(?![\d(])', rep, expr)
+
+
+class RowMap:
+    """행 넣기('ins': start 부터 n 줄 밀림)·지우기('del': start..start+n-1 사라짐) 때 행 번호를 옮기는 규칙."""
+
+    def __init__(self, kind, start, n):
+        self.kind, self.start, self.n = kind, start, n
+        self.end = start + n - 1
+
+    def one(self, r):
+        if self.kind == 'ins':
+            return r + self.n if r >= self.start else r
+        if r < self.start:
+            return r
+        return None if r <= self.end else r - self.n
+
+    def rng(self, r1, r2):
+        if self.kind == 'ins':
+            return self.one(r1), self.one(r2)
+        if r1 >= self.start and r2 <= self.end:
+            return None
+        a = r1 if r1 < self.start else (self.start if r1 <= self.end else r1 - self.n)
+        b = r2 if r2 < self.start else (self.start - 1 if r2 <= self.end else r2 - self.n)
+        return (a, b) if a <= b else None
+
+
+_SHEET_PREFIX = r"((?:'(?:[^']|'')+'|[^\W\d][\w.]*)!)"
+_REF = re.compile(r"(?<![\w.$'!])" + _SHEET_PREFIX + r"?(\$?)([A-Z]{1,3})(\$?)(\d+)(?::(\$?)([A-Z]{1,3})(\$?)(\d+))?(?![\w(!])")
+_ROWS = re.compile(_SHEET_PREFIX + r"(\$?)(\d+):(\$?)(\d+)(?![\w])")
+
+
+def _sheet_of(prefix):
+    nm = prefix[:-1]
+    return nm[1:-1].replace("''", "'") if nm.startswith("'") else nm
+
+
+def _map_refs(expr, rm, sheet_name, local):
+    """수식 글자 안의 셀 참조를 행 이동 규칙 rm 대로 고친다.
+    local=True 면 시트 이름 없는 참조도 이 시트(sheet_name)를 가리키는 것으로 본다. 사라진 칸은 #REF!"""
+    def one(m):
+        pre = m.group(1)
+        if pre:
+            if _sheet_of(pre) != sheet_name:
+                return m.group(0)
+        elif not local:
+            return m.group(0)
+        pre = pre or ''
+        if m.group(6):
+            res = rm.rng(int(m.group(5)), int(m.group(9)))
+            if res is None:
+                return pre + '#REF!'
+            return f'{pre}{m.group(2)}{m.group(3)}{m.group(4)}{res[0]}:{m.group(6)}{m.group(7)}{m.group(8)}{res[1]}'
+        res = rm.one(int(m.group(5)))
+        return pre + '#REF!' if res is None else f'{pre}{m.group(2)}{m.group(3)}{m.group(4)}{res}'
+
+    def rows(m):
+        if _sheet_of(m.group(1)) != sheet_name:
+            return m.group(0)
+        res = rm.rng(int(m.group(3)), int(m.group(5)))
+        if res is None:
+            return m.group(1) + '#REF!'
+        return f'{m.group(1)}{m.group(2)}{res[0]}:{m.group(4)}{res[1]}'
+    parts = expr.split('"')
+    for i in range(0, len(parts), 2):
+        parts[i] = _ROWS.sub(rows, _REF.sub(one, parts[i]))
+    return '"'.join(parts)
+
+
+def _map_sqref(s, rm):
+    """'A1 B2:C5' 같은 칸 범위 목록을 옮긴다. 다 사라지면 None."""
+    out = []
+    for part in s.split():
+        a, _, b = part.partition(':')
+        if not re.fullmatch(r'\$?[A-Z]+\$?\d+', a) or (b and not re.fullmatch(r'\$?[A-Z]+\$?\d+', b)):
+            out.append(part)        # 열 전체(A:A) 등
+            continue
+        ca, ra = split_ref(a)
+        if b:
+            cb, rb = split_ref(b)
+            res = rm.rng(ra, rb)
+            if res:
+                out.append(f'{ca}{res[0]}:{cb}{res[1]}')
+        else:
+            r = rm.one(ra)
+            if r is not None:
+                out.append(f'{ca}{r}')
+    return ' '.join(out) or None
+
+
+def rels_path(path):
+    d, f = posixpath.split(path)
+    return f'{d}/_rels/{f}.rels'
 
 
 def _eval(expr, get):
@@ -313,6 +673,12 @@ def _replace_runs(si, old, new):
             t.text = (pre + new + post) if first else post
             t.set(XML_SPACE, 'preserve')
             first = False
+        # 글자가 다 빠진 서식 조각(run)은 지운다 (빈 <t> 가 든 run 이 있으면 Excel 이 파일을 열지 못한다)
+        for t in list(ts):
+            r = t.getparent()
+            if not t.text and r.tag == q('r') and len(si.findall(q('r'))) > 1:
+                si.remove(r)
+                ts.remove(t)
         if old in new:
             return
 
@@ -343,6 +709,7 @@ class Book:
         self._derived = {}
         self._styles = None
         self._yellow = {}
+        self._structure_changed = False
 
     def _rel_target(self, kind):
         for r in self.rels:
@@ -368,6 +735,56 @@ class Book:
             self._sheets[name] = Sheet(self, name, info['path'])
         return self._sheets[name]
 
+    def all_sheets(self):
+        return [self.sheet(s['name']) for s in self.sheet_list() if s['path'] in self.files]
+
+    def map_defined_names(self, sheet_name, rm):
+        dn = self.wb.find(q('definedNames'))
+        if dn is None:
+            return
+        for d in dn:
+            if d.text and sheet_name in d.text.replace("''", "'"):
+                nt = _map_refs(d.text, rm, sheet_name, False)
+                if nt != d.text:
+                    d.text = nt
+                    self.touched.add('xl/workbook.xml')
+
+    def part_rels(self, path):
+        p = rels_path(path)
+        if p not in self.files:
+            return []
+        out = []
+        for r in etree.fromstring(self.files[p]):
+            if r.get('TargetMode') == 'External':
+                continue
+            out.append((r.get('Type', '').rsplit('/', 1)[-1], _norm(posixpath.dirname(path) + '/' + r.get('Target'))))
+        return out
+
+    def _ct_override(self, part):
+        return next((o for o in self.ct if o.get('PartName') == '/' + part), None)
+
+    def _copy_part(self, part):
+        """부품 하나를 새 이름으로 복사 (콘텐츠 형식·딸린 관계 파일 포함). 새 경로를 돌려준다."""
+        m = re.match(r'(.*?)(\d*)(\.[^./]+)$', part)
+        base, ext = m.group(1), m.group(3)
+        k = 1
+        while f'{base}{k}{ext}' in self.files:
+            k += 1
+        new = f'{base}{k}{ext}'
+        self.files[new] = self.files[part]
+        self.order.append(new)
+        ov = self._ct_override(part)
+        if ov is not None:
+            nov = copy.deepcopy(ov)
+            nov.set('PartName', '/' + new)
+            self.ct.append(nov)
+        rp = rels_path(part)
+        if rp in self.files:         # 그림이 쓰는 이미지 등은 같은 파일을 같이 가리킨다
+            nrp = rels_path(new)
+            self.files[nrp] = self.files[rp]
+            self.order.append(nrp)
+        return new
+
     # ---------------------------------------------------------------- 공유문자열
     def add_string(self, text):
         si = etree.SubElement(self.sst_root, q('si'))
@@ -387,6 +804,32 @@ class Book:
             self.sst.append(si)
             self._derived[key] = len(self.sst) - 1
         return self._derived[key]
+
+    # ---------------------------------------------------------------- 셀에 맞춤
+    def shrink_style(self, s):
+        if not hasattr(self, '_shrink'):
+            self._shrink = {}
+        if s in self._shrink:
+            return self._shrink[s]
+        if self._styles is None:
+            self._styles = etree.fromstring(self.files['xl/styles.xml'])
+        xfs = self._styles.find(q('cellXfs'))
+        al = xfs[s].find(q('alignment'))
+        if al is not None and al.get('shrinkToFit') == '1' and al.get('wrapText') != '1':
+            self._shrink[s] = s
+            return s
+        nx = copy.deepcopy(xfs[s])
+        al = nx.find(q('alignment'))
+        if al is None:
+            al = etree.Element(q('alignment'))
+            nx.insert(0, al)
+        al.set('shrinkToFit', '1')
+        al.attrib.pop('wrapText', None)
+        nx.set('applyAlignment', '1')
+        xfs.append(nx)
+        xfs.set('count', str(len(xfs)))
+        self._shrink[s] = len(xfs) - 1
+        return self._shrink[s]
 
     # ---------------------------------------------------------------- 노란색 표시
     def yellow_style(self, s):
@@ -416,10 +859,17 @@ class Book:
         return self._yellow[s]
 
     # ---------------------------------------------------------------- 시트 복사
-    def copy_sheet(self, src_name, new_name):
+    def copy_sheet(self, src_name, new_name, after=None, before=None):
+        """src_name 시트를 복사해 new_name 으로. after 시트 바로 뒤(또는 before 시트 바로 앞)에 둔다 (없으면 원본 뒤)."""
         sheets = self.sheet_list()
         src = next(s for s in sheets if s['name'] == src_name)
-        pos = [s['name'] for s in sheets].index(src_name) + 1
+        names = [s['name'] for s in sheets]
+        if before in names:
+            pos = names.index(before)
+            anchor = sheets[pos - 1] if pos else None
+        else:
+            anchor = next((s for s in sheets if s['name'] == after), src)
+            pos = names.index(anchor['name']) + 1
         nums = [int(m.group(1)) for n in self.files for m in [re.match(r'xl/worksheets/sheet(\d+)\.xml$', n)] if m]
         new_path = f'xl/worksheets/sheet{max(nums) + 1}.xml'
         # 시트 XML (편집 중이면 현재 상태로)
@@ -429,23 +879,33 @@ class Book:
             sv.attrib.pop('tabSelected', None)
         self.files[new_path] = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=True)
         self.order.append(new_path)
-        # 시트 rels (인쇄설정 등)
-        src_rels = src['path'].replace('worksheets/', 'worksheets/_rels/') + '.rels'
+        # 시트 rels (인쇄설정·그림·메모 등)
+        src_rels = rels_path(src['path'])
         if src_rels in self.files:
             rr = etree.fromstring(self.files[src_rels])
+            copied = []
             for rel in rr:
-                tgt = rel.get('Target')
-                full = _norm('xl/worksheets/' + tgt)
+                if rel.get('TargetMode') == 'External':
+                    continue
+                full = _norm(posixpath.dirname(src['path']) + '/' + rel.get('Target'))
                 if full in self.files:
-                    base, ext = re.match(r'(.*?)(\d*)(\.[^.]+)$', full).group(1), re.match(r'.*(\.[^.]+)$', full).group(1)
-                    k = 1
-                    while f'{base}{k}{ext}' in self.files:
-                        k += 1
-                    nf = f'{base}{k}{ext}'
-                    self.files[nf] = self.files[full]
-                    self.order.append(nf)
-                    rel.set('Target', '../' + nf[len('xl/'):])
-            nr = new_path.replace('worksheets/', 'worksheets/_rels/') + '.rels'
+                    nf = self._copy_part(full)
+                    copied.append((rel.get('Type', '').rsplit('/', 1)[-1], nf))
+                    rel.set('Target', posixpath.relpath(nf, posixpath.dirname(new_path)))
+            # 스레드 메모의 고유번호(GUID)는 통합문서 안에서 겹치면 안 된다 → 복사본은 새 번호로
+            tc = [p for k, p in copied if k == 'threadedComment']
+            if tc:
+                ids = set()
+                for p in tc:
+                    ids |= set(re.findall(r'\bid="\{([0-9A-Fa-f\-]{36})\}"', self.files[p].decode('utf-8')))
+                new_ids = {i: str(uuid.uuid4()).upper() for i in ids}
+                for k, p in copied:
+                    if k in ('threadedComment', 'comments'):
+                        txt = self.files[p].decode('utf-8')
+                        for o, n in new_ids.items():
+                            txt = re.sub(re.escape(o), n, txt, flags=re.I)
+                        self.files[p] = txt.encode('utf-8')
+            nr = rels_path(new_path)
             self.files[nr] = etree.tostring(rr, xml_declaration=True, encoding='UTF-8', standalone=True)
             self.order.append(nr)
         # 통합문서 관계
@@ -465,7 +925,10 @@ class Book:
         el.set('name', new_name)
         el.set('sheetId', str(sid))
         el.set(q('id', RNS), rid)
-        src['el'].addnext(el)
+        if anchor is not None:
+            anchor['el'].addnext(el)
+        else:
+            sheets[0]['el'].addprevious(el)
         # 열린 시트 번호(activeTab)가 새 시트 뒤를 가리키면 한 칸 민다 (안 그러면 시트 두 개가 같이 선택된다)
         for wv in self.wb.iter(q('workbookView')):
             for attr in ('activeTab', 'firstSheet'):
@@ -475,7 +938,7 @@ class Book:
         # 이름 정의 (인쇄영역 등): 뒤 시트 번호 밀기 + 새 시트용 복사
         dn = self.wb.find(q('definedNames'))
         if dn is not None:
-            src_idx = pos - 1
+            src_idx = [s['name'] for s in sheets].index(src_name)
             add = []
             for d in dn:
                 lid = d.get('localSheetId')
@@ -495,8 +958,104 @@ class Book:
         self.touched.add('xl/workbook.xml')
         return self.sheet(new_name)
 
+    # ---------------------------------------------------------------- 시트 이름 바꾸기
+    def rename_sheet(self, old, new):
+        info = next(s for s in self.sheet_list() if s['name'] == old)
+        info['el'].set('name', new)
+        refs = ["'" + old.replace("'", "''") + "'!"] + ([old + '!'] if _qname(old) == old else [])
+
+        def fix(t):
+            for r in refs:
+                if t and r in t:
+                    t = re.sub(r'(?<![\w.\'])' + re.escape(r), lambda m: _qname(new) + '!', t)
+            return t
+        dn = self.wb.find(q('definedNames'))
+        if dn is not None:
+            for d in dn:
+                d.text = fix(d.text)
+        for sh in self.all_sheets():
+            for c in sh.data.iter(q('c')):
+                f = c.find(q('f'))
+                if f is not None and f.text and old in f.text:
+                    f.text = fix(f.text)
+                    self.touched.add(sh.path)
+        sh = self._sheets.pop(old, None)
+        if sh is not None:
+            sh.name = new
+            self._sheets[new] = sh
+        self.touched.add('xl/workbook.xml')
+
+    # ---------------------------------------------------------------- 시트 지우기
+    def delete_sheet(self, name):
+        sheets = self.sheet_list()
+        idx = [s['name'] for s in sheets].index(name)
+        info = sheets[idx]
+        rid = info['el'].get(q('id', RNS))
+        info['el'].getparent().remove(info['el'])
+        for r in list(self.rels):
+            if r.get('Id') == rid:
+                self.rels.remove(r)
+        parts = self.part_rels(info['path'])
+        self._sheets.pop(name, None)
+        # 다른 시트가 같이 쓰지 않는 딸린 부품(그림·메모·인쇄설정)도 지운다
+        used = {p for s in self.sheet_list() for _, p in self.part_rels(s['path'])}
+        for _, p in parts:
+            if p not in used:
+                self._drop_part(p)
+        self._drop_part(info['path'])
+        dn = self.wb.find(q('definedNames'))
+        if dn is not None:
+            for d in list(dn):
+                lid = d.get('localSheetId')
+                if lid is None:
+                    continue
+                lid = int(lid)
+                if lid == idx:
+                    dn.remove(d)
+                elif lid > idx:
+                    d.set('localSheetId', str(lid - 1))
+            if not len(dn):
+                self.wb.remove(dn)
+        for wv in self.wb.iter(q('workbookView')):
+            for attr in ('activeTab', 'firstSheet'):
+                v = wv.get(attr)
+                if v is not None and int(v) > idx:
+                    wv.set(attr, str(int(v) - 1))
+        self._structure_changed = True
+        self.touched.add('xl/workbook.xml')
+
+    def _drop_part(self, part):
+        for p in (part, rels_path(part)):
+            if p in self.files:
+                del self.files[p]
+        for o in list(self.ct):
+            if o.get('PartName') == '/' + part:
+                self.ct.remove(o)
+
+    def _fix_selection(self):
+        """열린 시트(activeTab)가 보이는 시트를 가리키게 하고, 그 시트 하나만 선택 표시한다."""
+        sheets = self.sheet_list()
+        wv = next(self.wb.iter(q('workbookView')), None)
+        if wv is None or not sheets:
+            return
+        act = min(int(wv.get('activeTab') or 0), len(sheets) - 1)
+        if sheets[act]['state'] != 'visible':
+            act = next((i for i, s in enumerate(sheets) if s['state'] == 'visible'), 0)
+        wv.set('activeTab', str(act))
+        if int(wv.get('firstSheet') or 0) > act:
+            wv.set('firstSheet', str(act))
+        for i, s in enumerate(sheets):
+            sh = self.sheet(s['name'])
+            for sv in sh.root.iter(q('sheetView')):
+                if i == act:
+                    sv.set('tabSelected', '1')
+                else:
+                    sv.attrib.pop('tabSelected', None)
+
     # ---------------------------------------------------------------- 저장
     def save(self):
+        if self._structure_changed:
+            self._fix_selection()
         for name, sh in self._sheets.items():
             self.files[sh.path] = sh.tostring()
         if self.sst_path:
