@@ -1,0 +1,12 @@
+{
+ "pages": {
+  "contract": {
+   "name": "계약서 자동작성(공급계약서·추가선택품목)",
+   "version": "1.05",
+   "files": [
+    "app/static/index.html",
+    "docs/index.html"
+   ]
+  }
+ }
+}
