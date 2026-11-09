@@ -2,12 +2,20 @@
  "pages": {
   "contract": {
    "name": "계약서 자동작성(공급계약서·추가선택품목)",
-   "version": "1.0",
+   "version": "1.1",
    "files": [
     "app/static/index.html",
     "docs/index.html"
    ],
    "changelog": [
+    {
+     "version": "1.1",
+     "date": "2026-11-09",
+     "changes": [
+      "입주자모집공고 .hwpx(HWPX) 파일 지원 — hwpx_reader 추가(표준 라이브러리만), .hwp 와 같은 결과(오산 서2·화성비봉 공고의 hwp/hwpx 쌍으로 검증), 검토 메모 글자는 뺌",
+      "화면·안내 문구 '.hwp 또는 .hwpx', 사용법·README 갱신"
+     ]
+    },
     {
      "version": "1.0",
      "date": "2026-11-05",
