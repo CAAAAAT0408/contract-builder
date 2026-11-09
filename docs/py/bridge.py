@@ -48,7 +48,7 @@ def analyze(cbytes, nbytes, cname, nname, strike):
     if not str(cname).lower().endswith('.docx'):
         return json.dumps({'ok': False, 'error': '샘플 계약서는 Word(.docx) 파일이어야 합니다.'}, ensure_ascii=False)
     if not str(nname).lower().endswith(('.hwp', '.hwpx')):
-        return json.dumps({'ok': False, 'error': '모집공고는 한글(.hwp) 파일이어야 합니다.'}, ensure_ascii=False)
+        return json.dumps({'ok': False, 'error': '모집공고는 한글(.hwp 또는 .hwpx) 파일이어야 합니다.'}, ensure_ascii=False)
     try:
         plan = _analyze(c, n, {'strike': bool(strike)})
     except PlanError as e:
@@ -119,7 +119,7 @@ def opt_analyze(xbytes, nbytes, xname, nname):
     if not str(xname).lower().endswith('.xlsx'):
         return json.dumps({'ok': False, 'error': '샘플 계약서는 엑셀(.xlsx) 파일이어야 합니다. .xls 이면 Excel 에서 .xlsx 로 저장해 주세요.'}, ensure_ascii=False)
     if not str(nname).lower().endswith(('.hwp', '.hwpx')):
-        return json.dumps({'ok': False, 'error': '모집공고는 한글(.hwp) 파일이어야 합니다.'}, ensure_ascii=False)
+        return json.dumps({'ok': False, 'error': '모집공고는 한글(.hwp 또는 .hwpx) 파일이어야 합니다.'}, ensure_ascii=False)
     try:
         plan = analyze_options(x, n)
     except (OptionError, XlsxError) as e:

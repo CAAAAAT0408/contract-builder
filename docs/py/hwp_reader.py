@@ -1,6 +1,6 @@
 """한글(.hwp, HWP 5.0) 파일에서 문단 텍스트를 읽는다.
 
-한컴오피스 없이 파일을 직접 해석한다. 각 문단은
+한컴오피스 없이 파일을 직접 해석한다. .hwpx(HWPX) 는 hwpx_reader 가 같은 모양으로 읽어 돌려준다. 각 문단은
   level : 레코드 깊이. 본문 표 안 = 4, 표 안의 표 = 6 처럼 표가 중첩될수록 커진다.
   text  : 문단 글자. 문단 머리 기호(■, - 등)는 앞에 붙이고, 줄바꿈(Shift+Enter)은 '⏎' 로 둔다.
 """
@@ -106,7 +106,8 @@ def _body(data):
 def read_hwp(data):
     """data: 파일 바이트. [{'level': int, 'text': str}, ...] 를 돌려준다."""
     if data[:4] == b'PK\x03\x04':
-        raise HwpError('HWPX 형식입니다. 한글에서 "다른 이름으로 저장 → 한글 문서(*.hwp)" 로 저장한 뒤 넣어 주세요.')
+        from hwpx_reader import read_hwpx          # HWPX (zip + XML) 는 hwpx_reader 가 읽는다
+        return read_hwpx(data)
     try:
         ole = olefile.OleFileIO(io.BytesIO(data))
     except Exception:
@@ -164,6 +165,9 @@ def read_hwp_tables(data):
     """공고 안의 표를 칸 좌표까지 읽는다.
     [{'before': 표 바로 앞 문단, 'rows': n, 'cols': m,
       'cells': [{'r','c','rs','cs','t'}]}]   (t: 칸 글자, 줄바꿈은 '⏎')"""
+    from hwpx_reader import is_hwpx, read_hwpx_tables
+    if is_hwpx(data):
+        return read_hwpx_tables(data)
     try:
         ole = olefile.OleFileIO(io.BytesIO(data))
     except Exception:

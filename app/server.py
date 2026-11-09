@@ -287,7 +287,7 @@ class Handler(BaseHTTPRequestHandler):
         if not cname.lower().endswith('.docx'):
             raise PlanError('샘플 계약서는 Word(.docx) 파일이어야 합니다.')
         if not nname.lower().endswith(('.hwp', '.hwpx')):
-            raise PlanError('모집공고는 한글(.hwp) 파일이어야 합니다.')
+            raise PlanError('모집공고는 한글(.hwp 또는 .hwpx) 파일이어야 합니다.')
         cleanup_jobs()
         job = os.urandom(6).hex()
         d = os.path.join(JOBS, job)

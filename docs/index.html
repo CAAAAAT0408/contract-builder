@@ -132,7 +132,7 @@ table.items td.st{width:64px;white-space:nowrap}
         <input type="file" accept=".docx" class="hidden">
       </div>
       <div class="drop" id="dropN" data-kind="notice">
-        <b>새 현장 입주자모집공고 (.hwp)</b>
+        <b>새 현장 입주자모집공고 (.hwp, .hwpx)</b>
         <div class="hint">반영할 현장의 모집공고 한글 파일</div>
         <div class="file" id="fileN"></div>
         <input type="file" accept=".hwp,.hwpx" class="hidden">
@@ -207,7 +207,7 @@ table.items td.st{width:64px;white-space:nowrap}
         <input type="file" accept=".xlsx" class="hidden">
       </div>
       <div class="drop" id="dropN2" data-kind="notice">
-        <b>새 현장 입주자모집공고 (.hwp)</b>
+        <b>새 현장 입주자모집공고 (.hwp, .hwpx)</b>
         <div class="hint">공급계약서 탭에서 넣었다면 자동으로 들어옵니다</div>
         <div class="file" id="fileN2"></div>
         <input type="file" accept=".hwp,.hwpx" class="hidden">
@@ -285,7 +285,7 @@ table.items td.st{width:64px;white-space:nowrap}
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const files = {contract:null, notice:null, xsample:null};
-const worker = new Worker('worker.js?v=2026.10.06c');
+const worker = new Worker('worker.js?v=2026.11.09');
 let seq = 0, isReady = false;
 const pending = {};
 worker.onmessage = e => {
@@ -330,7 +330,7 @@ for (const el of document.querySelectorAll('.drop')) {
 const FILEKIND = {
   contract: {re: /\.docx$/i, msg: '샘플 계약서는 .docx 파일이어야 합니다.', boxes: [['#dropC', '#fileC']]},
   xsample: {re: /\.xlsx$/i, msg: '샘플 추가선택품목 계약서는 .xlsx 파일이어야 합니다. (.xls 는 Excel 에서 .xlsx 로 저장)', boxes: [['#dropX', '#fileX']]},
-  notice: {re: /\.hwpx?$/i, msg: '모집공고는 .hwp 파일이어야 합니다.', boxes: [['#dropN', '#fileN'], ['#dropN2', '#fileN2']]},
+  notice: {re: /\.hwpx?$/i, msg: '모집공고는 .hwp 또는 .hwpx 파일이어야 합니다.', boxes: [['#dropN', '#fileN'], ['#dropN2', '#fileN2']]},
 };
 function setFile(kind, f) {
   const k = FILEKIND[kind], errId = $('#paneOption').classList.contains('hidden') ? 'errA' : 'errO';

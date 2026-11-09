@@ -103,7 +103,7 @@ details.dong .blk{margin:8px 0 0;padding-left:8px;border-left:3px solid var(--do
         <input type="file" accept=".docx" class="hidden">
       </div>
       <div class="drop" id="dropN" data-kind="notice">
-        <b>새 현장 입주자모집공고 (.hwp)</b>
+        <b>새 현장 입주자모집공고 (.hwp, .hwpx)</b>
         <div class="hint">반영할 현장의 모집공고 한글 파일</div>
         <div class="file" id="fileN"></div>
         <input type="file" accept=".hwp,.hwpx" class="hidden">
@@ -201,7 +201,7 @@ for (const el of document.querySelectorAll('.drop')) {
 }
 function setFile(kind, f) {
   const ok = kind==='contract' ? /\.docx$/i.test(f.name) : /\.hwpx?$/i.test(f.name);
-  if (!ok) { showErr('errA', kind==='contract' ? '샘플 계약서는 .docx 파일이어야 합니다.' : '모집공고는 .hwp 파일이어야 합니다.'); return; }
+  if (!ok) { showErr('errA', kind==='contract' ? '샘플 계약서는 .docx 파일이어야 합니다.' : '모집공고는 .hwp 또는 .hwpx 파일이어야 합니다.'); return; }
   files[kind] = f;
   const box = kind==='contract' ? $('#dropC') : $('#dropN');
   box.classList.add('ok');
